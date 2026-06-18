@@ -7,6 +7,7 @@ export const queryKeys = {
   purchases: () => ["purchases", "summary"] as const,
   notifications: () => ["notifications"] as const,
   members: () => ["members"] as const,
+  sessions: () => ["sessions"] as const,
   orders: (params: OrdersParams) => ["orders", params] as const,
   products: (params: ProductsParams) => ["products", params] as const,
 };
@@ -45,6 +46,20 @@ export function fetchNotifications() {
 
 export function fetchMembers() {
   return api<{ members: Member[] }>("/members");
+}
+
+export function fetchSessions() {
+  return api<{ sessions: Session[] }>("/auth/sessions");
+}
+
+export function revokeSession(id: string) {
+  return api<{ success: boolean }>(`/auth/sessions/${id}`, { method: "DELETE" });
+}
+
+export function revokeOtherSessions() {
+  return api<{ success: boolean; revokedCount: number }>("/auth/sessions", {
+    method: "DELETE",
+  });
 }
 
 export function fetchOrders(params: OrdersParams) {
@@ -104,6 +119,16 @@ export interface Member {
   role: "ADMIN" | "MEMBER";
   createdAt: string;
   createdBy: { id: string; name: string } | null;
+}
+
+export interface Session {
+  id: string;
+  createdAt: string;
+  lastUsedAt: string;
+  expiresAt: string;
+  userAgent: string | null;
+  ipAddress: string | null;
+  isCurrent: boolean;
 }
 
 export interface Order {

@@ -80,7 +80,7 @@ describe("POST /api/members", () => {
       .send({
         name: "Nouveau Membre",
         email: "nouveau@vitest.local",
-        password: "password123",
+        password: "Password1!",
       });
 
     expect(res.status).toBe(201);
@@ -99,7 +99,7 @@ describe("POST /api/members", () => {
       .send({
         name: "Nouvel Admin",
         email: "newadmin@vitest.local",
-        password: "password123",
+        password: "Password1!",
         role: "ADMIN",
       });
 
@@ -114,7 +114,7 @@ describe("POST /api/members", () => {
       .send({
         name: "Membre Audité",
         email: "audite@vitest.local",
-        password: "password123",
+        password: "Password1!",
       });
 
     const audit = await prisma.auditLog.findFirst({
@@ -134,7 +134,7 @@ describe("POST /api/members", () => {
       .send({
         name: "Doublon",
         email: "doublon@vitest.local",
-        password: "password123",
+        password: "Password1!",
       });
 
     expect(res.status).toBe(409);
@@ -149,13 +149,53 @@ describe("POST /api/members", () => {
     expect(res.status).toBe(400);
   });
 
-  it("retourne 400 si le mot de passe est trop court (< 6 chars)", async () => {
+  it("retourne 400 si le mot de passe est trop court (< 8 chars)", async () => {
     const res = await request(app)
       .post("/api/members")
       .set("Authorization", `Bearer ${adminToken}`)
-      .send({ name: "Valide", email: "mdp@vitest.local", password: "123" });
+      .send({ name: "Valide", email: "mdp@vitest.local", password: "Ab1!" });
 
     expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/8 caractères/);
+  });
+
+  it("retourne 400 si le mot de passe n'a pas de majuscule", async () => {
+    const res = await request(app)
+      .post("/api/members")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ name: "Valide", email: "mdp2@vitest.local", password: "password1!" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/majuscule/i);
+  });
+
+  it("retourne 400 si le mot de passe n'a pas de chiffre", async () => {
+    const res = await request(app)
+      .post("/api/members")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ name: "Valide", email: "mdp3@vitest.local", password: "Password!" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/chiffre/i);
+  });
+
+  it("retourne 400 si le mot de passe n'a pas de caractère spécial", async () => {
+    const res = await request(app)
+      .post("/api/members")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ name: "Valide", email: "mdp4@vitest.local", password: "Password1" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/caractère spécial/i);
+  });
+
+  it("accepte un mot de passe fort (majuscule + chiffre + spécial)", async () => {
+    const res = await request(app)
+      .post("/api/members")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ name: "Valide", email: "mdpfort@vitest.local", password: "Password1!" });
+
+    expect(res.status).toBe(201);
   });
 
   it("retourne 400 si l'email est invalide", async () => {
@@ -174,7 +214,7 @@ describe("POST /api/members", () => {
       .send({
         name: "Valide",
         email: "role@vitest.local",
-        password: "password123",
+        password: "Password1!",
         role: "SUPERADMIN",
       });
 
@@ -193,7 +233,7 @@ describe("POST /api/members", () => {
 // ─── DELETE /api/members/:id ──────────────────────────────────────────────────
 
 describe("DELETE /api/members/:id", () => {
-  it("supprime un membre existant et retourne 200", async () => {
+  it("supprime (soft delete) un membre existant et retourne 200", async () => {
     const member = await createTestMember(
       { email: "todelete@vitest.local" },
       adminId
@@ -206,8 +246,77 @@ describe("DELETE /api/members/:id", () => {
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ success: true });
 
+    // La ligne existe toujours (références FK préservées) mais est marquée supprimée
     const deleted = await prisma.user.findUnique({ where: { id: member.id } });
-    expect(deleted).toBeNull();
+    expect(deleted).not.toBeNull();
+    expect(deleted?.deletedAt).not.toBeNull();
+    // L'email a été anonymisé pour libérer la contrainte d'unicité
+    expect(deleted?.email).not.toBe("todelete@vitest.local");
+    expect(deleted?.email).toContain("todelete@vitest.local");
+  });
+
+  it("le membre supprimé n'apparaît plus dans la liste", async () => {
+    const member = await createTestMember(
+      { email: "gone@vitest.local" },
+      adminId
+    );
+
+    await request(app)
+      .delete(`/api/members/${member.id}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    const res = await request(app)
+      .get("/api/members")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    const ids = (res.body.members as { id: string }[]).map((m) => m.id);
+    expect(ids).not.toContain(member.id);
+  });
+
+  it("révoque les sessions du membre supprimé", async () => {
+    const member = await createTestMember(
+      { email: "revoke-on-delete@vitest.local" },
+      adminId
+    );
+    // Session active simulée
+    await prisma.refreshToken.create({
+      data: {
+        jti: `jti-${Date.now()}`,
+        userId: member.id,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      },
+    });
+
+    await request(app)
+      .delete(`/api/members/${member.id}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    const active = await prisma.refreshToken.count({
+      where: { userId: member.id, revokedAt: null },
+    });
+    expect(active).toBe(0);
+  });
+
+  it("permet de recréer un membre avec l'email d'un membre supprimé", async () => {
+    const member = await createTestMember(
+      { email: "reusable@vitest.local" },
+      adminId
+    );
+    await request(app)
+      .delete(`/api/members/${member.id}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    const res = await request(app)
+      .post("/api/members")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        name: "Nouveau",
+        email: "reusable@vitest.local",
+        password: "Password1!",
+        role: "MEMBER",
+      });
+
+    expect(res.status).toBe(201);
   });
 
   it("enregistre un audit log DELETE", async () => {

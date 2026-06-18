@@ -10,6 +10,7 @@ import { MemberDashboard } from "./pages/MemberDashboard";
 import { OrdersPage } from "./pages/OrdersPage";
 import { ProductsPage } from "./pages/ProductsPage";
 import { PurchasesPage } from "./pages/PurchasesPage";
+import { SessionsPage } from "./pages/SessionsPage";
 
 function HomeRedirect() {
   const { user, loading } = useAuth();
@@ -38,6 +39,7 @@ export default function App() {
             <Route path="produits" element={<ProductsPage />} />
             <Route path="achats" element={<PurchasesPage />} />
             <Route path="equipe" element={<TeamPage />} />
+            <Route path="sessions" element={<SessionsPage />} />
           </Route>
 
           <Route

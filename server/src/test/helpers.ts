@@ -52,6 +52,7 @@ export function makeMemberToken(userId: string): string {
 export async function cleanDb(): Promise<void> {
   // L'ordre est important : d'abord les tables qui référencent d'autres tables.
   await prisma.auditLog.deleteMany();
+  await prisma.refreshToken.deleteMany();
   await prisma.orderStatusHistory.deleteMany();
   await prisma.orderItem.deleteMany();
   await prisma.order.deleteMany();
@@ -96,7 +97,7 @@ export async function createTestMember(overrides?: {
     data: {
       name: overrides?.name ?? "Membre Test",
       email: overrides?.email ?? `member-${Date.now()}@vitest.local`,
-      password: await bcrypt.hash("password123", 10),
+      password: await bcrypt.hash("Password1!", 10),
       role: overrides?.role ?? "MEMBER",
       createdById,
     },

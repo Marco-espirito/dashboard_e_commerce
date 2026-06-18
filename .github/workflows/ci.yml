@@ -43,10 +43,34 @@ jobs:
         working-directory: server
 
       - name: Typecheck client
-        run: npx tsc -b --noEmit
+        # tsc -b (build mode) respecte le noEmit par projet ; --noEmit en ligne
+        # de commande entre en conflit avec les projets composites (TS6310).
+        run: npx tsc -b
         working-directory: client
 
-  # ── 2. Tests d'intégration ────────────────────────────────────────────────────
+  # ── 2. Audit des dépendances (vulnérabilités connues) ────────────────────────
+  audit:
+    name: Audit npm
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Échoue uniquement sur les vulnérabilités high/critical pour ne pas
+      # bloquer le pipeline sur du bruit de bas niveau (moderate/low).
+      - name: Audit server
+        run: npm audit --audit-level=high
+        working-directory: server
+
+      - name: Audit client
+        run: npm audit --audit-level=high
+        working-directory: client
+
+  # ── 3. Tests d'intégration ────────────────────────────────────────────────────
   test:
     name: Tests
     runs-on: ubuntu-latest

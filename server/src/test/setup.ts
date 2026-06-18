@@ -1,20 +1,23 @@
 /**
- * Fichier de setup Vitest — exécuté une fois avant chaque fichier de test.
+ * Fichier de setup Vitest — exécuté une fois PAR FICHIER de test.
  *
- * Il crée l'admin de test (s'il n'existe pas) et nettoie la base avant/après
- * chaque suite, garantissant des tests isolés et reproductibles.
+ * Important : avec singleFork:true, setupFiles s'exécute pour chaque fichier
+ * test dans le même process. On NE PAS appeler prisma.$disconnect() ici —
+ * cela couperait la connexion entre les fichiers et rendrait Prisma instable.
+ * Vitest ferme le process à la fin, ce qui déconnecte proprement.
  */
 import { beforeAll, afterAll } from "vitest";
-import { prisma } from "../lib/prisma";
 import { cleanDb, createTestAdmin } from "./helpers";
 
 beforeAll(async () => {
-  // Nettoyer les résidus d'une exécution précédente, puis préparer les fixtures.
+  // Partir d'un état propre pour chaque fichier de test
   await cleanDb();
   await createTestAdmin();
 });
 
 afterAll(async () => {
+  // Nettoyer les données créées pendant ce fichier de test.
+  // PAS de prisma.$disconnect() — la connexion doit rester ouverte
+  // pour les fichiers de test suivants (le process se ferme proprement après).
   await cleanDb();
-  await prisma.$disconnect();
 });

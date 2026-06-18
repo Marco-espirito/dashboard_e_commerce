@@ -21,12 +21,39 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Verrouillage de compte après échecs de connexion répétés
+  loginAttempts Int       @default(0)
+  lockedUntil   DateTime?
+
+  // Suppression logique (soft delete) — préserve les références FK
+  // (audit logs, historique de statut) tout en désactivant le compte.
+  deletedAt DateTime?
+
   // Trace de l'admin qui a créé ce membre
   createdById String?
   createdBy   User?    @relation("CreatedMembers", fields: [createdById], references: [id])
   members     User[]   @relation("CreatedMembers")
   orderStatusChanges OrderStatusHistory[]
   auditLogs          AuditLog[]
+  refreshTokens      RefreshToken[]
+}
+
+// Refresh tokens stockés côté serveur pour permettre la révocation
+// On stocke le jti (JWT ID) et non le token brut.
+model RefreshToken {
+  id         String    @id @default(cuid())
+  jti        String    @unique          // identifiant unique embarqué dans le JWT
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime
+  revokedAt  DateTime?                  // null = actif, non-null = révoqué
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime  @default(now())  // mis à jour à chaque refresh
+  userAgent  String?                    // navigateur / OS de l'appareil
+  ipAddress  String?                    // adresse IP de connexion
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 enum OrderStatus {
   PENDING

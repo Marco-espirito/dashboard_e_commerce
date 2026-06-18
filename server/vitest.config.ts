@@ -16,9 +16,13 @@ export default defineConfig({
     // Timeout généreux pour les appels DB
     testTimeout: 30_000,
     hookTimeout: 30_000,
-    // Exécuter les fichiers de test séquentiellement (évite les conflits DB)
+    // Exécuter les fichiers de test séquentiellement (évite les conflits DB).
+    // fileParallelism: false garantit que les suites se succèdent sans chevauchement
+    // (singleFork: true ne suffit pas — les tests s'exécutent quand même en parallèle
+    // si plusieurs workers sont disponibles dans le même fork).
     pool: "forks",
     singleFork: true,
+    fileParallelism: false,
     // Couverture de code (optionnel : npm run test:coverage)
     coverage: {
       provider: "v8",

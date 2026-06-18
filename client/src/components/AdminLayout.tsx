@@ -52,6 +52,9 @@ export function AdminLayout() {
           <NavLink to="/admin/equipe" className={linkClass}>
             Équipe
           </NavLink>
+          <NavLink to="/admin/sessions" className={linkClass}>
+            Sessions
+          </NavLink>
         </nav>
 
         {notifications && notificationCount > 0 && (
@@ -120,6 +123,7 @@ export function AdminLayout() {
             <NavLink to="/admin/commandes" className={linkClass}>Commandes</NavLink>
             <NavLink to="/admin/produits" className={linkClass}>Produits</NavLink>
             <NavLink to="/admin/equipe" className={linkClass}>Équipe</NavLink>
+            <NavLink to="/admin/sessions" className={linkClass}>Sessions</NavLink>
           </nav>
           <div className="flex items-center gap-3">
             {notifications && notificationCount > 0 && (

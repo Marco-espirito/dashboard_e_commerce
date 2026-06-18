@@ -11,16 +11,34 @@ const router = Router();
 
 router.use(authenticate, requireAdmin);
 
+/**
+ * Règles de mot de passe :
+ *  - 8 caractères minimum
+ *  - Au moins une lettre majuscule
+ *  - Au moins un chiffre
+ *  - Au moins un caractère spécial
+ */
+const passwordSchema = z
+  .string()
+  .min(8, "Le mot de passe doit contenir au moins 8 caractères")
+  .regex(/[A-Z]/, "Le mot de passe doit contenir au moins une majuscule")
+  .regex(/[0-9]/, "Le mot de passe doit contenir au moins un chiffre")
+  .regex(
+    /[!@#$%^&*()\-_=+\[\]{};':",.<>/?\\|`~]/,
+    "Le mot de passe doit contenir au moins un caractère spécial"
+  );
+
 const createMemberSchema = z.object({
   name: z.string().min(2, "Le nom doit faire au moins 2 caractères"),
   email: z.string().email("Email invalide"),
-  password: z.string().min(6, "Le mot de passe doit faire au moins 6 caractères"),
+  password: passwordSchema,
   role: z.enum(["ADMIN", "MEMBER"]).default("MEMBER"),
 });
 
 // GET /api/members
 router.get("/", asyncHandler(async (_req, res) => {
   const members = await prisma.user.findMany({
+    where: { deletedAt: null }, // exclure les membres supprimés (soft delete)
     orderBy: { createdAt: "desc" },
     select: {
       id: true, name: true, email: true, role: true, createdAt: true,
@@ -37,7 +55,9 @@ router.post("/", asyncHandler(async (req, res) => {
 
   const { name, email, password, role } = parsed.data;
 
-  const existing = await prisma.user.findUnique({ where: { email } });
+  // Ne bloquer que sur un compte actif. Les comptes supprimés ont leur email
+  // anonymisé (voir DELETE), donc ne créent pas de conflit ici.
+  const existing = await prisma.user.findFirst({ where: { email, deletedAt: null } });
   if (existing) throw new AppError(409, "Cet email est déjà utilisé");
 
   const hashed = await bcrypt.hash(password, 10);
@@ -73,7 +93,7 @@ router.delete("/:id", asyncHandler(async (req, res) => {
     throw new AppError(400, "Vous ne pouvez pas vous supprimer vous-même");
   }
 
-  const member = await prisma.user.findUnique({ where: { id } });
+  const member = await prisma.user.findFirst({ where: { id, deletedAt: null } });
   if (!member) throw new AppError(404, "Membre introuvable");
 
   await logAudit({
@@ -85,7 +105,24 @@ router.delete("/:id", asyncHandler(async (req, res) => {
     metadata: { name: member.name, email: member.email, role: member.role },
   });
 
-  await prisma.user.delete({ where: { id } });
+  // Soft delete : on conserve la ligne (références FK vers audit logs et
+  // historique de statut intactes), on marque la date de suppression, et on
+  // anonymise l'email pour libérer la contrainte d'unicité (réutilisable).
+  // Les refresh tokens sont révoqués → déconnexion immédiate de tous ses appareils.
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id },
+      data: {
+        deletedAt: new Date(),
+        email: `deleted_${Date.now()}_${member.email}`,
+      },
+    }),
+    prisma.refreshToken.updateMany({
+      where: { userId: id, revokedAt: null },
+      data: { revokedAt: new Date() },
+    }),
+  ]);
+
   return res.json({ success: true });
 }));
 

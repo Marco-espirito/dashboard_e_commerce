@@ -9,6 +9,7 @@ import { logger } from "./lib/logger";
 import { errorHandler } from "./middleware/errorHandler";
 
 import authRoutes from "./routes/auth.routes";
+import sessionsRoutes from "./routes/sessions.routes";
 import memberRoutes from "./routes/members.routes";
 import statsRoutes from "./routes/stats.routes";
 import orderRoutes from "./routes/orders.routes";
@@ -53,6 +54,9 @@ const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Trop de tentatives, réessayez plus tard" },
+  // En test, le limiter est désactivé pour ne pas interférer avec les suites
+  // qui font de nombreux appels à /login. Le lockout par compte (en DB) reste actif.
+  skip: () => env.NODE_ENV === "test",
 });
 
 // ── Routes ────────────────────────────────────────────────────────────────────
@@ -60,6 +64,7 @@ app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
 
 app.use("/api/auth/login", authLimiter);
 app.use("/api/auth", authRoutes);
+app.use("/api/auth/sessions", sessionsRoutes);
 app.use("/api/members", memberRoutes);
 app.use("/api/stats", statsRoutes);
 app.use("/api/orders", orderRoutes);

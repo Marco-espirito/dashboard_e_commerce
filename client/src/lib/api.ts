@@ -21,6 +21,7 @@ async function refreshAccessToken(): Promise<string | null> {
   refreshPromise = fetch(`${API_URL}/auth/refresh`, {
     method: "POST",
     credentials: "include", // envoie le cookie httpOnly
+    headers: { "X-Requested-With": "XMLHttpRequest" }, // protection CSRF
   })
     .then(async (res) => {
       if (!res.ok) { setAccessToken(null); return null; }
@@ -48,6 +49,9 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    // En-tête custom requis par la protection CSRF côté serveur.
+    // Un attaquant cross-site ne peut pas le poser (déclenche un preflight CORS).
+    "X-Requested-With": "XMLHttpRequest",
   };
 
   if (auth && accessToken) {
