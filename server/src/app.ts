@@ -10,6 +10,7 @@ import { errorHandler } from "./middleware/errorHandler";
 
 import authRoutes from "./routes/auth.routes";
 import sessionsRoutes from "./routes/sessions.routes";
+import authEventsRoutes from "./routes/authEvents.routes";
 import memberRoutes from "./routes/members.routes";
 import statsRoutes from "./routes/stats.routes";
 import orderRoutes from "./routes/orders.routes";
@@ -72,6 +73,7 @@ app.use("/api/products", productRoutes);
 app.use("/api/purchases", purchaseRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/audit", auditRoutes);
+app.use("/api/auth-events", authEventsRoutes);
 
 // ── Gestionnaire d'erreurs centralisé (toujours en dernier) ───────────────────
 app.use(errorHandler);

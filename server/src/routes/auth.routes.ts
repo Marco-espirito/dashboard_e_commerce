@@ -14,6 +14,7 @@ import { AppError } from "../middleware/errorHandler";
 import { requireCsrfHeader } from "../middleware/csrf";
 import { env } from "../lib/env";
 import { logger } from "../lib/logger";
+import { logAuthEvent, extractClientInfo } from "../lib/audit";
 
 const router = Router();
 
@@ -46,11 +47,13 @@ router.post("/login", asyncHandler(async (req, res) => {
   if (!parsed.success) throw new AppError(400, parsed.error.issues[0].message);
 
   const { email, password } = parsed.data;
+  const clientInfo = extractClientInfo(req);
 
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user || user.deletedAt) {
     // Email inconnu ou compte supprimé — même message que "mauvais mot de passe"
     // pour éviter l'énumération d'emails via les messages d'erreur.
+    await logAuthEvent({ type: "LOGIN_FAILED", email, ...clientInfo });
     throw new AppError(401, "Identifiants incorrects");
   }
 
@@ -60,6 +63,7 @@ router.post("/login", asyncHandler(async (req, res) => {
     const remainingMin = Math.ceil(
       (user.lockedUntil!.getTime() - Date.now()) / 60_000
     );
+    await logAuthEvent({ type: "LOGIN_FAILED", email, userId: user.id, ...clientInfo });
     throw new AppError(
       429,
       `Compte temporairement bloqué. Réessayez dans ${remainingMin} minute${remainingMin > 1 ? "s" : ""}.`
@@ -86,12 +90,14 @@ router.post("/login", asyncHandler(async (req, res) => {
     });
 
     if (shouldLock) {
+      await logAuthEvent({ type: "ACCOUNT_LOCKED", email, userId: user.id, ...clientInfo });
       throw new AppError(
         429,
         `Compte bloqué pendant 15 minutes après ${MAX_LOGIN_ATTEMPTS} tentatives échouées.`
       );
     }
 
+    await logAuthEvent({ type: "LOGIN_FAILED", email, userId: user.id, ...clientInfo });
     const remaining = MAX_LOGIN_ATTEMPTS - newAttempts;
     throw new AppError(
       401,
@@ -130,6 +136,8 @@ router.post("/login", asyncHandler(async (req, res) => {
   prisma.refreshToken
     .deleteMany({ where: { userId: user.id, expiresAt: { lt: new Date() } } })
     .catch((err) => logger.warn({ err }, "Échec nettoyage refresh tokens expirés"));
+
+  await logAuthEvent({ type: "LOGIN_SUCCESS", email, userId: user.id, ...clientInfo });
 
   setRefreshCookie(res, refreshToken);
   return res.json({
@@ -209,6 +217,16 @@ router.post("/logout", requireCsrfHeader, asyncHandler(async (req, res) => {
       await prisma.refreshToken.updateMany({
         where: { jti: payload.jti, revokedAt: null },
         data: { revokedAt: new Date() },
+      });
+      const user = await prisma.user.findUnique({
+        where: { id: payload.userId },
+        select: { email: true },
+      });
+      await logAuthEvent({
+        type: "LOGOUT",
+        email: user?.email ?? "",
+        userId: payload.userId,
+        ...extractClientInfo(req),
       });
     } catch {
       // Token invalide ou expiré — on efface le cookie quand même

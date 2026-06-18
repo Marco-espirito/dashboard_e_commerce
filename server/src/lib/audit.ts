@@ -1,9 +1,57 @@
 import { Prisma } from "@prisma/client";
+import type { Request } from "express";
 import { prisma } from "./prisma";
 import { logger } from "./logger";
 
 export type AuditAction = "CREATE" | "UPDATE" | "DELETE";
 export type AuditEntity = "PRODUCT" | "MEMBER";
+
+export type AuthEventType =
+  | "LOGIN_SUCCESS"
+  | "LOGIN_FAILED"
+  | "LOGOUT"
+  | "ACCOUNT_LOCKED";
+
+/** Extrait l'IP cliente (en tenant compte d'un éventuel proxy) et le user-agent. */
+export function extractClientInfo(req: Request): {
+  ipAddress: string | null;
+  userAgent: string | null;
+} {
+  const ipAddress =
+    (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0].trim() ??
+    req.socket.remoteAddress ??
+    null;
+  const userAgent = req.headers["user-agent"] ?? null;
+  return { ipAddress, userAgent };
+}
+
+interface LogAuthEventParams {
+  type: AuthEventType;
+  email: string;
+  userId?: string | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+}
+
+/**
+ * Enregistre un événement d'authentification (login/logout/lockout).
+ * Best-effort : n'interrompt jamais le flux d'authentification.
+ */
+export async function logAuthEvent(params: LogAuthEventParams): Promise<void> {
+  try {
+    await prisma.authEvent.create({
+      data: {
+        type: params.type,
+        email: params.email,
+        userId: params.userId ?? null,
+        ipAddress: params.ipAddress ?? null,
+        userAgent: params.userAgent ?? null,
+      },
+    });
+  } catch (err) {
+    logger.error({ err, params }, "Échec écriture auth event");
+  }
+}
 
 interface LogAuditParams {
   action: AuditAction;

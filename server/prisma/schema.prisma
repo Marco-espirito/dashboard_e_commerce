@@ -121,6 +121,31 @@ model AuditLog {
   @@index([createdAt])
 }
 
+// Journal des événements d'authentification (détection d'attaques :
+// brute-force, connexions suspectes…). Découplé de AuditLog car il n'y a
+// pas toujours d'utilisateur authentifié (échec de login) et on veut
+// conserver l'IP / le user-agent comme champs de premier niveau.
+enum AuthEventType {
+  LOGIN_SUCCESS
+  LOGIN_FAILED
+  LOGOUT
+  ACCOUNT_LOCKED
+}
+
+model AuthEvent {
+  id        String        @id @default(cuid())
+  type      AuthEventType
+  email     String // email tenté (toujours renseigné)
+  userId    String? // utilisateur concerné si trouvé (pas de FK : durable)
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime      @default(now())
+
+  @@index([email])
+  @@index([type])
+  @@index([createdAt])
+}
+
 model OrderStatusHistory {
   id        String      @id @default(cuid())
   orderId   String

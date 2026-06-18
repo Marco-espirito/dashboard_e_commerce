@@ -6,6 +6,7 @@ import {
   TEST_ADMIN_EMAIL,
   TEST_ADMIN_PASSWORD,
   makeAdminToken,
+  makeMemberToken,
 } from "../../test/helpers";
 
 // ─── Helpers locaux ───────────────────────────────────────────────────────────
@@ -50,6 +51,7 @@ async function resetAdminLockout() {
 
 beforeEach(async () => {
   await prisma.refreshToken.deleteMany();
+  await prisma.authEvent.deleteMany();
   await resetAdminLockout();
 });
 
@@ -350,6 +352,116 @@ describe("GET /api/auth/me", () => {
     const res = await request(app)
       .get("/api/auth/me")
       .set("Authorization", "Bearer token.faux.ici");
+    expect(res.status).toBe(401);
+  });
+});
+
+// ─── Journal des événements d'authentification ────────────────────────────────
+
+describe("Journal d'événements d'authentification", () => {
+  it("enregistre un LOGIN_SUCCESS sur connexion réussie", async () => {
+    await request(app)
+      .post("/api/auth/login")
+      .send({ email: TEST_ADMIN_EMAIL, password: TEST_ADMIN_PASSWORD });
+
+    const event = await prisma.authEvent.findFirst({
+      where: { type: "LOGIN_SUCCESS", email: TEST_ADMIN_EMAIL },
+    });
+    expect(event).not.toBeNull();
+  });
+
+  it("enregistre un LOGIN_FAILED sur mauvais mot de passe", async () => {
+    await request(app)
+      .post("/api/auth/login")
+      .send({ email: TEST_ADMIN_EMAIL, password: "mauvais" });
+
+    const event = await prisma.authEvent.findFirst({
+      where: { type: "LOGIN_FAILED", email: TEST_ADMIN_EMAIL },
+    });
+    expect(event).not.toBeNull();
+  });
+
+  it("enregistre un LOGIN_FAILED même pour un email inconnu (détection énumération)", async () => {
+    await request(app)
+      .post("/api/auth/login")
+      .send({ email: "inconnu@vitest.local", password: "x" });
+
+    const event = await prisma.authEvent.findFirst({
+      where: { type: "LOGIN_FAILED", email: "inconnu@vitest.local" },
+    });
+    expect(event).not.toBeNull();
+    expect(event?.userId).toBeNull();
+  });
+
+  it("enregistre un ACCOUNT_LOCKED après 3 échecs", async () => {
+    for (let i = 0; i < 3; i++) {
+      await request(app)
+        .post("/api/auth/login")
+        .send({ email: TEST_ADMIN_EMAIL, password: "mauvais" });
+    }
+
+    const event = await prisma.authEvent.findFirst({
+      where: { type: "ACCOUNT_LOCKED", email: TEST_ADMIN_EMAIL },
+    });
+    expect(event).not.toBeNull();
+  });
+
+  it("capture l'IP et le user-agent", async () => {
+    await request(app)
+      .post("/api/auth/login")
+      .set("User-Agent", "TestAgent/1.0")
+      .send({ email: TEST_ADMIN_EMAIL, password: TEST_ADMIN_PASSWORD });
+
+    const event = await prisma.authEvent.findFirst({
+      where: { type: "LOGIN_SUCCESS", email: TEST_ADMIN_EMAIL },
+    });
+    expect(event?.userAgent).toBe("TestAgent/1.0");
+    expect(event?.ipAddress).toBeTruthy();
+  });
+});
+
+// ─── GET /api/auth-events (admin) ─────────────────────────────────────────────
+
+describe("GET /api/auth-events", () => {
+  it("retourne les événements pour un admin", async () => {
+    await request(app)
+      .post("/api/auth/login")
+      .send({ email: TEST_ADMIN_EMAIL, password: TEST_ADMIN_PASSWORD });
+
+    const admin = await prisma.user.findUnique({ where: { email: TEST_ADMIN_EMAIL } });
+    const res = await request(app)
+      .get("/api/auth-events")
+      .set("Authorization", `Bearer ${makeAdminToken(admin!.id)}`);
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.events)).toBe(true);
+    expect(res.body.events.length).toBeGreaterThan(0);
+  });
+
+  it("filtre par type d'événement", async () => {
+    await request(app)
+      .post("/api/auth/login")
+      .send({ email: TEST_ADMIN_EMAIL, password: "mauvais" });
+
+    const admin = await prisma.user.findUnique({ where: { email: TEST_ADMIN_EMAIL } });
+    const res = await request(app)
+      .get("/api/auth-events?type=LOGIN_FAILED")
+      .set("Authorization", `Bearer ${makeAdminToken(admin!.id)}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.events.every((e: { type: string }) => e.type === "LOGIN_FAILED")).toBe(true);
+  });
+
+  it("retourne 403 pour un membre non-admin", async () => {
+    const res = await request(app)
+      .get("/api/auth-events")
+      .set("Authorization", `Bearer ${makeMemberToken("some-member-id")}`);
+
+    expect(res.status).toBe(403);
+  });
+
+  it("retourne 401 sans token", async () => {
+    const res = await request(app).get("/api/auth-events");
     expect(res.status).toBe(401);
   });
 });
