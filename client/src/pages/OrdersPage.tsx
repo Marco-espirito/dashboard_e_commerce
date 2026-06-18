@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { formatPrice } from "../lib/format";
 
@@ -30,6 +31,17 @@ interface OrderDetail {
       category: string | null;
     };
   }[];
+  statusHistory: {
+    id: string;
+    fromStatus: OrderStatus;
+    toStatus: OrderStatus;
+    createdAt: string;
+    changedBy: {
+      id: string;
+      name: string;
+      email: string;
+    };
+  }[];
 }
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
@@ -53,6 +65,18 @@ const STATUS_OPTIONS: { value: OrderStatus; label: string }[] = [
   { value: "CANCELLED", label: STATUS_LABELS.CANCELLED },
 ];
 
+const ORDER_STATUSES: OrderStatus[] = [
+  "PENDING",
+  "PAID",
+  "SHIPPED",
+  "DELIVERED",
+  "CANCELLED",
+];
+
+function isOrderStatus(value: string | null): value is OrderStatus {
+  return ORDER_STATUSES.includes(value as OrderStatus);
+}
+
 const FILTERS: { value: "ALL" | OrderStatus; label: string }[] = [
   { value: "ALL", label: "Toutes" },
   { value: "PAID", label: "Payées" },
@@ -72,6 +96,7 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
 ];
 
 export function OrdersPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -90,6 +115,12 @@ export function OrdersPage() {
       .catch((e) => setError(e instanceof Error ? e.message : "Erreur"))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    const status = searchParams.get("status");
+    setFilter(isOrderStatus(status) ? status : "ALL");
+    setPage(1);
+  }, [searchParams]);
 
 
   const filtered =
@@ -114,6 +145,11 @@ export function OrdersPage() {
   function changeFilter(value: "ALL" | OrderStatus) {
     setFilter(value);
     setPage(1);
+    if (value === "ALL") {
+      setSearchParams({});
+    } else {
+      setSearchParams({ status: value });
+    }
   }
 
   async function changeStatus(id: string, status: OrderStatus) {
@@ -136,6 +172,10 @@ export function OrdersPage() {
           ? { ...current, status: data.order.status }
           : current
       );
+      if (selectedOrderId === id) {
+        await loadOrderDetail(id);
+      }
+      window.dispatchEvent(new Event("admin-notifications:refresh"));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
     } finally {
@@ -362,6 +402,37 @@ export function OrdersPage() {
                     </li>
                   ))}
                 </ul>
+              </div>
+
+              <div className="border-t border-slate-100 pt-5">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  Historique des statuts
+                </h3>
+                {orderDetail.statusHistory.length === 0 ? (
+                  <p className="mt-3 text-sm text-slate-400">
+                    Aucun changement de statut enregistre.
+                  </p>
+                ) : (
+                  <ul className="mt-3 space-y-3">
+                    {orderDetail.statusHistory.map((entry) => (
+                      <li key={entry.id} className="rounded-xl bg-slate-50 px-3 py-3">
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                          <span className={`rounded-full px-2 py-0.5 font-medium ${STATUS_CLASSES[entry.fromStatus]}`}>
+                            {STATUS_LABELS[entry.fromStatus]}
+                          </span>
+                          <span className="text-slate-400">vers</span>
+                          <span className={`rounded-full px-2 py-0.5 font-medium ${STATUS_CLASSES[entry.toStatus]}`}>
+                            {STATUS_LABELS[entry.toStatus]}
+                          </span>
+                        </div>
+                        <div className="mt-2 text-xs text-slate-500">
+                          Par {entry.changedBy.name} le{" "}
+                          {new Date(entry.createdAt).toLocaleString("fr-FR")}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
 
               <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">

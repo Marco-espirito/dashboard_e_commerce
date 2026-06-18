@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { formatPrice } from "../lib/format";
 
@@ -39,6 +40,7 @@ function fromCents(value: number): string {
 }
 
 export function ProductsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -48,6 +50,7 @@ export function ProductsPage() {
   const [form, setForm] = useState<ProductForm>(EMPTY_FORM);
   const [page, setPage] = useState(1);
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
+  const stockFilter = searchParams.get("stock") === "low" ? "low" : "all";
 
   async function loadProducts() {
     setLoading(true);
@@ -68,6 +71,10 @@ export function ProductsPage() {
   useEffect(() => {
     loadProducts();
   }, []);
+
+  useEffect(() => {
+    setPage(1);
+  }, [stockFilter]);
 
   function updateForm(field: keyof ProductForm, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -121,6 +128,7 @@ export function ProductsPage() {
       }
       resetForm();
       await loadProducts();
+      window.dispatchEvent(new Event("admin-notifications:refresh"));
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Erreur");
     } finally {
@@ -134,6 +142,7 @@ export function ProductsPage() {
       if (editingId === product.id) resetForm();
       setProductToDelete(null);
       await loadProducts();
+      window.dispatchEvent(new Event("admin-notifications:refresh"));
     } catch (err) {
       alert(err instanceof Error ? err.message : "Erreur");
     }
@@ -151,10 +160,14 @@ export function ProductsPage() {
     (total, product) => total + product.stockBeforePurchases,
     0
   );
-  const totalPages = Math.max(1, Math.ceil(products.length / PER_PAGE));
+  const visibleProducts =
+    stockFilter === "low"
+      ? products.filter((product) => product.stock <= 10)
+      : products;
+  const totalPages = Math.max(1, Math.ceil(visibleProducts.length / PER_PAGE));
   const currentPage = Math.min(page, totalPages);
   const start = (currentPage - 1) * PER_PAGE;
-  const pageProducts = products.slice(start, start + PER_PAGE);
+  const pageProducts = visibleProducts.slice(start, start + PER_PAGE);
 
   return (
     <div>
@@ -164,6 +177,21 @@ export function ProductsPage() {
           Ajoute, modifie et gere le stock de ta boutique.
         </p>
       </div>
+
+      {stockFilter === "low" && (
+        <div className="mt-6 flex flex-wrap items-center gap-3 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3">
+          <span className="text-sm font-medium text-amber-800">
+            Filtre actif : produits en stock faible
+          </span>
+          <button
+            type="button"
+            onClick={() => setSearchParams({})}
+            className="rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-amber-700 transition hover:bg-amber-100"
+          >
+            Voir tous les produits
+          </button>
+        </div>
+      )}
 
       <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">
         <div className="rounded-2xl border border-slate-200 bg-white p-5">
@@ -271,7 +299,7 @@ export function ProductsPage() {
             </p>
           ) : error ? (
             <p className="px-6 py-8 text-center text-sm text-red-600">{error}</p>
-          ) : products.length === 0 ? (
+          ) : visibleProducts.length === 0 ? (
             <p className="px-6 py-8 text-center text-sm text-slate-400">
               Aucun produit pour l'instant.
             </p>

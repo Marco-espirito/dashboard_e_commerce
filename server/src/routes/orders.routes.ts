@@ -52,6 +52,16 @@ router.get("/:id", async (req, res) => {
           },
         },
       },
+      statusHistory: {
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          fromStatus: true,
+          toStatus: true,
+          createdAt: true,
+          changedBy: { select: { id: true, name: true, email: true } },
+        },
+      },
     },
   });
 
@@ -79,10 +89,27 @@ router.patch("/:id/status", async (req, res) => {
     return res.status(404).json({ error: "Commande introuvable" });
   }
 
-  const order = await prisma.order.update({
-    where: { id },
-    data: { status: parsed.data.status },
-    select: { id: true, status: true },
+  if (existing.status === parsed.data.status) {
+    return res.json({ order: { id: existing.id, status: existing.status } });
+  }
+
+  const order = await prisma.$transaction(async (tx) => {
+    const updated = await tx.order.update({
+      where: { id },
+      data: { status: parsed.data.status },
+      select: { id: true, status: true },
+    });
+
+    await tx.orderStatusHistory.create({
+      data: {
+        orderId: id,
+        fromStatus: existing.status,
+        toStatus: parsed.data.status,
+        changedById: req.user!.userId,
+      },
+    });
+
+    return updated;
   });
 
   return res.json({ order });

@@ -21,11 +21,28 @@ export function AdminLayout() {
   const [notifications, setNotifications] = useState<AdminNotifications | null>(
     null
   );
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+
+  async function loadNotifications() {
+    try {
+      const data = await api<AdminNotifications>("/notifications");
+      setNotifications(data);
+    } catch {
+      setNotifications(null);
+    }
+  }
 
   useEffect(() => {
-    api<AdminNotifications>("/notifications")
-      .then(setNotifications)
-      .catch(() => setNotifications(null));
+    loadNotifications();
+
+    function handleRefresh() {
+      loadNotifications();
+    }
+
+    window.addEventListener("admin-notifications:refresh", handleRefresh);
+    return () => {
+      window.removeEventListener("admin-notifications:refresh", handleRefresh);
+    };
   }, []);
 
   function handleLogout() {
@@ -68,46 +85,73 @@ export function AdminLayout() {
         </nav>
 
         {notifications && notificationCount > 0 && (
-          <div className="mt-4 rounded-xl border border-amber-100 bg-amber-50 p-3">
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+          <div className="relative mt-4">
+            <button
+              type="button"
+              onClick={() => setNotificationsOpen((open) => !open)}
+              className="flex w-full items-center justify-between rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-left transition hover:bg-amber-100"
+            >
+              <span className="flex items-center gap-2 text-sm font-medium text-amber-800">
+                <span className="relative flex h-8 w-8 items-center justify-center rounded-full bg-white text-amber-700">
+                  <svg
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    className="h-4 w-4"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 7h18s-3 0-3-7" />
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                  </svg>
+                  <span className="absolute -right-1 -top-1 rounded-full bg-amber-400 px-1.5 py-0.5 text-[10px] font-bold text-amber-950">
+                    {notificationCount}
+                  </span>
+                </span>
                 Notifications
-              </div>
-              <span className="rounded-full bg-amber-200 px-2 py-0.5 text-xs font-semibold text-amber-800">
-                {notificationCount}
               </span>
-            </div>
+              <span className="text-xs font-semibold text-amber-700">
+                {notificationsOpen ? "Masquer" : "Voir"}
+              </span>
+            </button>
 
-            <div className="mt-3 space-y-2 text-xs">
-              {notifications.counts.pendingOrders > 0 && (
-                <NavLink
-                  to="/admin/commandes"
-                  className="block rounded-lg bg-white/70 px-2 py-1.5 text-amber-800 transition hover:bg-white"
-                >
-                  {notifications.counts.pendingOrders} commande
-                  {notifications.counts.pendingOrders > 1 ? "s" : ""} en attente
-                </NavLink>
-              )}
-              {notifications.counts.cancelledOrders > 0 && (
-                <NavLink
-                  to="/admin/commandes"
-                  className="block rounded-lg bg-white/70 px-2 py-1.5 text-red-700 transition hover:bg-white"
-                >
-                  {notifications.counts.cancelledOrders} commande
-                  {notifications.counts.cancelledOrders > 1 ? "s" : ""} annulee
-                  {notifications.counts.cancelledOrders > 1 ? "s" : ""}
-                </NavLink>
-              )}
-              {notifications.counts.lowStockProducts > 0 && (
-                <NavLink
-                  to="/admin/produits"
-                  className="block rounded-lg bg-white/70 px-2 py-1.5 text-slate-700 transition hover:bg-white"
-                >
-                  {notifications.counts.lowStockProducts} produit
-                  {notifications.counts.lowStockProducts > 1 ? "s" : ""} en stock faible
-                </NavLink>
-              )}
-            </div>
+            {notificationsOpen && (
+              <div className="mt-2 space-y-2 rounded-xl border border-amber-100 bg-white p-2 text-xs shadow-sm">
+                {notifications.counts.pendingOrders > 0 && (
+                  <NavLink
+                    to="/admin/commandes?status=PENDING"
+                    onClick={() => setNotificationsOpen(false)}
+                    className="block rounded-lg px-2 py-1.5 text-amber-800 transition hover:bg-amber-50"
+                  >
+                    {notifications.counts.pendingOrders} commande
+                    {notifications.counts.pendingOrders > 1 ? "s" : ""} en attente
+                  </NavLink>
+                )}
+                {notifications.counts.cancelledOrders > 0 && (
+                  <NavLink
+                    to="/admin/commandes?status=CANCELLED"
+                    onClick={() => setNotificationsOpen(false)}
+                    className="block rounded-lg px-2 py-1.5 text-red-700 transition hover:bg-red-50"
+                  >
+                    {notifications.counts.cancelledOrders} commande
+                    {notifications.counts.cancelledOrders > 1 ? "s" : ""} annulee
+                    {notifications.counts.cancelledOrders > 1 ? "s" : ""}
+                  </NavLink>
+                )}
+                {notifications.counts.lowStockProducts > 0 && (
+                  <NavLink
+                    to="/admin/produits?stock=low"
+                    onClick={() => setNotificationsOpen(false)}
+                    className="block rounded-lg px-2 py-1.5 text-slate-700 transition hover:bg-slate-50"
+                  >
+                    {notifications.counts.lowStockProducts} produit
+                    {notifications.counts.lowStockProducts > 1 ? "s" : ""} en stock faible
+                  </NavLink>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -132,10 +176,63 @@ export function AdminLayout() {
             <NavLink to="/admin/equipe" className={linkClass}>Équipe</NavLink>
           </nav>
           <div className="flex items-center gap-3">
-            {notificationCount > 0 && (
-              <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-700">
-                {notificationCount} alertes
-              </span>
+            {notifications && notificationCount > 0 && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setNotificationsOpen((open) => !open)}
+                  className="relative flex h-9 w-9 items-center justify-center rounded-full bg-amber-50 text-amber-700"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    className="h-4 w-4"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 7h18s-3 0-3-7" />
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                  </svg>
+                  <span className="absolute -right-1 -top-1 rounded-full bg-amber-400 px-1.5 py-0.5 text-[10px] font-bold text-amber-950">
+                    {notificationCount}
+                  </span>
+                </button>
+
+                {notificationsOpen && (
+                  <div className="absolute right-0 top-11 z-20 w-56 space-y-2 rounded-xl border border-slate-200 bg-white p-2 text-xs shadow-lg">
+                    {notifications.counts.pendingOrders > 0 && (
+                      <NavLink
+                        to="/admin/commandes?status=PENDING"
+                        onClick={() => setNotificationsOpen(false)}
+                        className="block rounded-lg px-2 py-1.5 text-amber-800 transition hover:bg-amber-50"
+                      >
+                        {notifications.counts.pendingOrders} commandes en attente
+                      </NavLink>
+                    )}
+                    {notifications.counts.cancelledOrders > 0 && (
+                      <NavLink
+                        to="/admin/commandes?status=CANCELLED"
+                        onClick={() => setNotificationsOpen(false)}
+                        className="block rounded-lg px-2 py-1.5 text-red-700 transition hover:bg-red-50"
+                      >
+                        {notifications.counts.cancelledOrders} commandes annulees
+                      </NavLink>
+                    )}
+                    {notifications.counts.lowStockProducts > 0 && (
+                      <NavLink
+                        to="/admin/produits?stock=low"
+                        onClick={() => setNotificationsOpen(false)}
+                        className="block rounded-lg px-2 py-1.5 text-slate-700 transition hover:bg-slate-50"
+                      >
+                        {notifications.counts.lowStockProducts} produits en stock faible
+                      </NavLink>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
             <button onClick={handleLogout} className="text-sm text-slate-500 hover:text-slate-900">
               Deconnexion
