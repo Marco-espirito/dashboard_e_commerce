@@ -1,25 +1,14 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from "recharts";
-import { api } from "../lib/api";
 import { formatPrice } from "../lib/format";
+import { queryKeys, fetchStats } from "../lib/queries";
 
-type OrderStatus = "PENDING" | "PAID" | "SHIPPED" | "DELIVERED" | "CANCELLED";
+import type { OrderStatus } from "../lib/queries";
+
 type ChartPeriod = "YEAR" | "FIRST_2" | "LAST_2" | "CUSTOM" | "ALL";
-
-interface Stats {
-  revenueTotal: number;
-  ordersCount: number;
-  avgBasket: number;
-  productsCount: number;
-  revenueByMonth: { month: string; revenue: number }[];
-  topProducts: { name: string; sold: number; revenue: number }[];
-  lowStock: { id: string; name: string; stock: number }[];
-  recentOrders: {
-    id: string; customer: string; total: number; status: OrderStatus; createdAt: string;
-  }[];
-}
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
   PENDING: "En attente", PAID: "Payée", SHIPPED: "Expédiée",
@@ -49,23 +38,17 @@ function formatMonth(key: string): string {
 }
 
 export function DashboardPage() {
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const { data: stats, isLoading: loading, error } = useQuery({
+    queryKey: queryKeys.stats(),
+    queryFn: fetchStats,
+  });
   const [chartPeriod, setChartPeriod] = useState<ChartPeriod>("YEAR");
   const [selectedYear, setSelectedYear] = useState("");
   const [customStartMonth, setCustomStartMonth] = useState("");
   const [customEndMonth, setCustomEndMonth] = useState("");
 
-  useEffect(() => {
-    api<Stats>("/stats/overview")
-      .then(setStats)
-      .catch((e) => setError(e instanceof Error ? e.message : "Erreur"))
-      .finally(() => setLoading(false));
-  }, []);
-
   if (loading) return <p className="text-sm text-slate-400">Chargement…</p>;
-  if (error || !stats) return <p className="text-sm text-red-600">{error || "Aucune donnée"}</p>;
+  if (error || !stats) return <p className="text-sm text-red-600">{error instanceof Error ? error.message : "Aucune donnée"}</p>;
 
   const kpis = [
     { label: "Chiffre d'affaires", value: formatPrice(stats.revenueTotal) },

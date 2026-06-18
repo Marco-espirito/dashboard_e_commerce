@@ -26,6 +26,7 @@ model User {
   createdBy   User?    @relation("CreatedMembers", fields: [createdById], references: [id])
   members     User[]   @relation("CreatedMembers")
   orderStatusChanges OrderStatusHistory[]
+  auditLogs          AuditLog[]
 }
 enum OrderStatus {
   PENDING
@@ -64,6 +65,33 @@ model OrderItem {
   product   Product @relation(fields: [productId], references: [id])
   quantity  Int
   unitPrice Int // prix au moment de la commande (centimes)
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+}
+
+enum AuditEntity {
+  PRODUCT
+  MEMBER
+}
+
+model AuditLog {
+  id          String      @id @default(cuid())
+  action      AuditAction
+  entity      AuditEntity
+  entityId    String
+  entityLabel String      // nom/email au moment de l'action (persiste si l'entité est supprimée)
+  metadata    Json?       // diff optionnel { field: { from: x, to: y } }
+  userId      String
+  user        User        @relation(fields: [userId], references: [id])
+  createdAt   DateTime    @default(now())
+
+  @@index([entity, entityId])
+  @@index([userId])
+  @@index([createdAt])
 }
 
 model OrderStatusHistory {

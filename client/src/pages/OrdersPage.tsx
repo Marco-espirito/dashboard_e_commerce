@@ -1,48 +1,10 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { formatPrice } from "../lib/format";
-
-type OrderStatus = "PENDING" | "PAID" | "SHIPPED" | "DELIVERED" | "CANCELLED";
-type SortOption = "DATE_DESC" | "DATE_ASC" | "TOTAL_DESC" | "TOTAL_ASC";
-
-interface Order {
-  id: string;
-  customer: string;
-  total: number;
-  status: OrderStatus;
-  createdAt: string;
-  _count: { items: number };
-}
-
-interface OrderDetail {
-  id: string;
-  customer: string;
-  total: number;
-  status: OrderStatus;
-  createdAt: string;
-  items: {
-    id: string;
-    quantity: number;
-    unitPrice: number;
-    product: {
-      id: string;
-      name: string;
-      category: string | null;
-    };
-  }[];
-  statusHistory: {
-    id: string;
-    fromStatus: OrderStatus;
-    toStatus: OrderStatus;
-    createdAt: string;
-    changedBy: {
-      id: string;
-      name: string;
-      email: string;
-    };
-  }[];
-}
+import { queryKeys, fetchOrders } from "../lib/queries";
+import type { OrderStatus, SortOption, OrderDetail } from "../lib/queries";
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
   PENDING: "En attente", PAID: "Payée", SHIPPED: "Expédiée",
@@ -65,13 +27,7 @@ const STATUS_OPTIONS: { value: OrderStatus; label: string }[] = [
   { value: "CANCELLED", label: STATUS_LABELS.CANCELLED },
 ];
 
-const ORDER_STATUSES: OrderStatus[] = [
-  "PENDING",
-  "PAID",
-  "SHIPPED",
-  "DELIVERED",
-  "CANCELLED",
-];
+const ORDER_STATUSES: OrderStatus[] = ["PENDING", "PAID", "SHIPPED", "DELIVERED", "CANCELLED"];
 
 function isOrderStatus(value: string | null): value is OrderStatus {
   return ORDER_STATUSES.includes(value as OrderStatus);
@@ -97,90 +53,65 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
 
 export function OrdersPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [filter, setFilter] = useState<"ALL" | OrderStatus>("ALL");
-  const [page, setPage] = useState(1);
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
-  const [sort, setSort] = useState<SortOption>("DATE_DESC");
+  const queryClient = useQueryClient();
+
+  const statusParam = searchParams.get("status");
+  const filter: "ALL" | OrderStatus = isOrderStatus(statusParam) ? statusParam : "ALL";
+  const sort = (searchParams.get("sort") as SortOption) ?? "DATE_DESC";
+  const currentPage = Math.max(1, Number(searchParams.get("page") ?? "1"));
+
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [orderDetail, setOrderDetail] = useState<OrderDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
 
-  useEffect(() => {
-    api<{ orders: Order[] }>("/orders")
-      .then((data) => setOrders(data.orders))
-      .catch((e) => setError(e instanceof Error ? e.message : "Erreur"))
-      .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => {
-    const status = searchParams.get("status");
-    setFilter(isOrderStatus(status) ? status : "ALL");
-    setPage(1);
-  }, [searchParams]);
-
-
-  const filtered =
-    filter === "ALL" ? orders : orders.filter((o) => o.status === filter);
-  const sorted = [...filtered].sort((a, b) => {
-    if (sort === "DATE_ASC") {
-      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-    }
-    if (sort === "TOTAL_DESC") return b.total - a.total;
-    if (sort === "TOTAL_ASC") return a.total - b.total;
-    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-  });
-
-  // Découpage en pages
-  const totalPages = Math.max(1, Math.ceil(sorted.length / PER_PAGE));
-  const currentPage = Math.min(page, totalPages); // évite de rester sur une page vide
-  const start = (currentPage - 1) * PER_PAGE;
-  const pageItems = sorted.slice(start, start + PER_PAGE);
-  const firstPageOrderId = pageItems[0]?.id ?? null;
-
-  // Quand on change de filtre, on revient à la page 1
-  function changeFilter(value: "ALL" | OrderStatus) {
-    setFilter(value);
-    setPage(1);
-    if (value === "ALL") {
-      setSearchParams({});
-    } else {
-      setSearchParams({ status: value });
-    }
+  function setParams(updates: Record<string, string | null>) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      for (const [k, v] of Object.entries(updates)) {
+        if (v === null) next.delete(k); else next.set(k, v);
+      }
+      return next;
+    });
   }
 
-  async function changeStatus(id: string, status: OrderStatus) {
-    setError("");
-    setUpdatingId(id);
-    try {
-      const data = await api<{ order: { id: string; status: OrderStatus } }>(
-        `/orders/${id}/status`,
-        { method: "PATCH", body: { status } }
-      );
-      setOrders((current) =>
-        current.map((order) =>
-          order.id === data.order.id
-            ? { ...order, status: data.order.status }
-            : order
-        )
-      );
+  const ordersParams = {
+    page: currentPage,
+    limit: PER_PAGE,
+    sort,
+    ...(filter !== "ALL" ? { status: filter } : {}),
+  };
+
+  const { data, isLoading: loading, error } = useQuery({
+    queryKey: queryKeys.orders(ordersParams),
+    queryFn: () => fetchOrders(ordersParams),
+  });
+
+  const orders = data?.orders ?? [];
+  const total = data?.total ?? 0;
+  const totalPages = data?.totalPages ?? 1;
+  const firstPageOrderId = orders[0]?.id ?? null;
+
+  const statusMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: OrderStatus }) =>
+      api<{ order: { id: string; status: OrderStatus } }>(`/orders/${id}/status`, {
+        method: "PATCH",
+        body: { status },
+      }),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.notifications() });
       setOrderDetail((current) =>
-        current?.id === data.order.id
-          ? { ...current, status: data.order.status }
-          : current
+        current?.id === result.order.id ? { ...current, status: result.order.status } : current
       );
-      if (selectedOrderId === id) {
-        await loadOrderDetail(id);
+      if (selectedOrderId === result.order.id) {
+        loadOrderDetail(result.order.id);
       }
-      window.dispatchEvent(new Event("admin-notifications:refresh"));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Erreur");
-    } finally {
-      setUpdatingId(null);
-    }
+    },
+  });
+
+  function changeFilter(value: "ALL" | OrderStatus) {
+    setParams({ status: value === "ALL" ? null : value, page: null });
   }
 
   async function loadOrderDetail(id: string) {
@@ -200,21 +131,19 @@ export function OrdersPage() {
 
   useEffect(() => {
     if (loading || error) return;
-
     if (!firstPageOrderId) {
       setSelectedOrderId(null);
       setOrderDetail(null);
       setDetailError("");
       return;
     }
-
     if (selectedOrderId !== firstPageOrderId) {
       loadOrderDetail(firstPageOrderId);
     }
-  }, [loading, error, firstPageOrderId, currentPage, filter, sort]);
+  }, [loading, !!error, firstPageOrderId, currentPage, filter, sort]);
 
   if (loading) return <p className="text-sm text-slate-400">Chargement...</p>;
-  if (error) return <p className="text-sm text-red-600">{error}</p>;
+  if (error) return <p className="text-sm text-red-600">{error instanceof Error ? error.message : "Erreur"}</p>;
 
   return (
     <div>
@@ -222,7 +151,7 @@ export function OrdersPage() {
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Commandes</h1>
           <p className="mt-1 text-sm text-slate-500">
-            {filtered.length} commande{filtered.length > 1 ? "s" : ""}
+            {total} commande{total > 1 ? "s" : ""}
             {filter !== "ALL" ? " dans cette catégorie" : " au total"}.
           </p>
         </div>
@@ -243,10 +172,7 @@ export function OrdersPage() {
           ))}
           <select
             value={sort}
-            onChange={(e) => {
-              setSort(e.target.value as SortOption);
-              setPage(1);
-            }}
+            onChange={(e) => setParams({ sort: e.target.value, page: null })}
             className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 outline-none transition hover:bg-slate-50 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
           >
             {SORT_OPTIONS.map((option) => (
@@ -271,14 +197,14 @@ export function OrdersPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {pageItems.length === 0 ? (
+            {orders.length === 0 ? (
               <tr>
                 <td colSpan={5} className="px-6 py-8 text-center text-sm text-slate-400">
                   Aucune commande dans cette catégorie.
                 </td>
               </tr>
             ) : (
-              pageItems.map((o) => (
+              orders.map((o) => (
                 <tr
                   key={o.id}
                   onClick={() => loadOrderDetail(o.id)}
@@ -294,11 +220,9 @@ export function OrdersPage() {
                   <td className="px-6 py-3">
                     <select
                       value={o.status}
-                      disabled={updatingId === o.id}
+                      disabled={statusMutation.isPending}
                       onClick={(e) => e.stopPropagation()}
-                      onChange={(e) =>
-                        changeStatus(o.id, e.target.value as OrderStatus)
-                      }
+                      onChange={(e) => statusMutation.mutate({ id: o.id, status: e.target.value as OrderStatus })}
                       className={`rounded-full border-0 px-2 py-1 text-xs font-medium outline-none transition focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 ${STATUS_CLASSES[o.status]}`}
                     >
                       {STATUS_OPTIONS.map((status) => (
@@ -321,21 +245,13 @@ export function OrdersPage() {
         <aside className="h-fit rounded-2xl border border-slate-200 bg-white p-6">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h2 className="text-sm font-semibold text-slate-900">
-                Detail de la commande
-              </h2>
-              <p className="mt-1 text-xs text-slate-400">
-                Clique sur une ligne pour afficher les articles.
-              </p>
+              <h2 className="text-sm font-semibold text-slate-900">Detail de la commande</h2>
+              <p className="mt-1 text-xs text-slate-400">Clique sur une ligne pour afficher les articles.</p>
             </div>
             {orderDetail && (
               <button
                 type="button"
-                onClick={() => {
-                  setSelectedOrderId(null);
-                  setOrderDetail(null);
-                  setDetailError("");
-                }}
+                onClick={() => { setSelectedOrderId(null); setOrderDetail(null); setDetailError(""); }}
                 className="rounded-lg px-2 py-1 text-xs font-medium text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
               >
                 Fermer
@@ -346,17 +262,13 @@ export function OrdersPage() {
           {detailLoading ? (
             <p className="mt-6 text-sm text-slate-400">Chargement...</p>
           ) : detailError ? (
-            <p className="mt-6 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-              {detailError}
-            </p>
+            <p className="mt-6 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{detailError}</p>
           ) : orderDetail ? (
             <div className="mt-6 space-y-5">
               <div className="space-y-3 text-sm">
                 <div className="flex justify-between gap-4">
                   <span className="text-slate-500">Client</span>
-                  <span className="font-medium text-slate-900">
-                    {orderDetail.customer}
-                  </span>
+                  <span className="font-medium text-slate-900">{orderDetail.customer}</span>
                 </div>
                 <div className="flex justify-between gap-4">
                   <span className="text-slate-500">Date</span>
@@ -373,30 +285,20 @@ export function OrdersPage() {
               </div>
 
               <div className="border-t border-slate-100 pt-5">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                  Articles achetes
-                </h3>
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Articles achetes</h3>
                 <ul className="mt-3 divide-y divide-slate-100">
                   {orderDetail.items.map((item) => (
                     <li key={item.id} className="py-3">
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <div className="text-sm font-medium text-slate-900">
-                            {item.product.name}
-                          </div>
+                          <div className="text-sm font-medium text-slate-900">{item.product.name}</div>
                           {item.product.category && (
-                            <div className="mt-0.5 text-xs text-slate-400">
-                              {item.product.category}
-                            </div>
+                            <div className="mt-0.5 text-xs text-slate-400">{item.product.category}</div>
                           )}
                         </div>
                         <div className="text-right text-sm">
-                          <div className="font-medium text-slate-900">
-                            {formatPrice(item.quantity * item.unitPrice)}
-                          </div>
-                          <div className="text-xs text-slate-400">
-                            {item.quantity} x {formatPrice(item.unitPrice)}
-                          </div>
+                          <div className="font-medium text-slate-900">{formatPrice(item.quantity * item.unitPrice)}</div>
+                          <div className="text-xs text-slate-400">{item.quantity} x {formatPrice(item.unitPrice)}</div>
                         </div>
                       </div>
                     </li>
@@ -405,13 +307,9 @@ export function OrdersPage() {
               </div>
 
               <div className="border-t border-slate-100 pt-5">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                  Historique des statuts
-                </h3>
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Historique des statuts</h3>
                 {orderDetail.statusHistory.length === 0 ? (
-                  <p className="mt-3 text-sm text-slate-400">
-                    Aucun changement de statut enregistre.
-                  </p>
+                  <p className="mt-3 text-sm text-slate-400">Aucun changement de statut enregistre.</p>
                 ) : (
                   <ul className="mt-3 space-y-3">
                     {orderDetail.statusHistory.map((entry) => (
@@ -426,8 +324,7 @@ export function OrdersPage() {
                           </span>
                         </div>
                         <div className="mt-2 text-xs text-slate-500">
-                          Par {entry.changedBy.name} le{" "}
-                          {new Date(entry.createdAt).toLocaleString("fr-FR")}
+                          Par {entry.changedBy.name} le {new Date(entry.createdAt).toLocaleString("fr-FR")}
                         </div>
                       </li>
                     ))}
@@ -437,9 +334,7 @@ export function OrdersPage() {
 
               <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
                 <span className="text-sm font-medium text-slate-500">Total</span>
-                <span className="text-lg font-semibold text-slate-900">
-                  {formatPrice(orderDetail.total)}
-                </span>
+                <span className="text-lg font-semibold text-slate-900">{formatPrice(orderDetail.total)}</span>
               </div>
             </div>
           ) : (
@@ -450,22 +345,19 @@ export function OrdersPage() {
         </aside>
       </div>
 
-      {/* Pagination */}
       {totalPages > 1 && (
         <div className="mt-4 flex items-center justify-between">
-          <span className="text-sm text-slate-500">
-            Page {currentPage} sur {totalPages}
-          </span>
+          <span className="text-sm text-slate-500">Page {currentPage} sur {totalPages}</span>
           <div className="flex gap-2">
             <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              onClick={() => setParams({ page: String(currentPage - 1) })}
               disabled={currentPage === 1}
               className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
             >
               Précédent
             </button>
             <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              onClick={() => setParams({ page: String(currentPage + 1) })}
               disabled={currentPage === totalPages}
               className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
             >

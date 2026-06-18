@@ -1,11 +1,8 @@
 import jwt from "jsonwebtoken";
+import { env } from "../lib/env";
 
-const JWT_SECRET = process.env.JWT_SECRET as string;
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
-
-if (!JWT_SECRET) {
-  throw new Error("JWT_SECRET manquant dans le fichier .env");
-}
+const JWT_SECRET = env.JWT_SECRET;
+const REFRESH_SECRET = env.REFRESH_SECRET || (JWT_SECRET + "_refresh");
 
 export type UserRole = "ADMIN" | "MEMBER";
 
@@ -14,12 +11,22 @@ export interface JwtPayload {
   role: UserRole;
 }
 
+/** Access token — courte durée (15 min) */
 export function signToken(payload: JwtPayload): string {
   return jwt.sign(payload, JWT_SECRET, {
-    expiresIn: JWT_EXPIRES_IN,
-  } as jwt.SignOptions);
+    expiresIn: (env.JWT_EXPIRES_IN as jwt.SignOptions["expiresIn"]) || "15m",
+  });
+}
+
+/** Refresh token — longue durée (7 j), stocké en cookie httpOnly */
+export function signRefreshToken(payload: JwtPayload): string {
+  return jwt.sign(payload, REFRESH_SECRET, { expiresIn: "7d" });
 }
 
 export function verifyToken(token: string): JwtPayload {
   return jwt.verify(token, JWT_SECRET) as JwtPayload;
+}
+
+export function verifyRefreshToken(token: string): JwtPayload {
+  return jwt.verify(token, REFRESH_SECRET) as JwtPayload;
 }

@@ -5,7 +5,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { api } from "../lib/api";
+import { api, setAccessToken } from "../lib/api";
 import type { User } from "../types";
 
 interface AuthContextValue {
@@ -21,18 +21,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Au chargement de l'app, on récupère l'utilisateur si un token existe déjà
+  // Au chargement : on tente un refresh silencieux pour restaurer la session
+  // depuis le cookie httpOnly (survivra à un reload de page).
+  // Le flag `cancelled` évite le double appel de React StrictMode en dev.
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      setLoading(false);
-      return;
-    }
+    let cancelled = false;
 
-    api<{ user: User }>("/auth/me")
-      .then((data) => setUser(data.user))
-      .catch(() => localStorage.removeItem("token"))
-      .finally(() => setLoading(false));
+    api<{ token: string }>("/auth/refresh", { method: "POST", auth: false })
+      .then(async (data) => {
+        if (cancelled) return;
+        setAccessToken(data.token);
+        const me = await api<{ user: User }>("/auth/me");
+        if (!cancelled) setUser(me.user);
+      })
+      .catch(() => {
+        if (!cancelled) { setAccessToken(null); setUser(null); }
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+
+    return () => { cancelled = true; };
+  }, []);
+
+  // L'intercepteur 401 de api.ts émet cet événement si le refresh échoue
+  useEffect(() => {
+    function handleForceLogout() {
+      setAccessToken(null);
+      setUser(null);
+    }
+    window.addEventListener("auth:logout", handleForceLogout);
+    return () => window.removeEventListener("auth:logout", handleForceLogout);
   }, []);
 
   async function login(email: string, password: string): Promise<User> {
@@ -41,13 +58,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       body: { email, password },
       auth: false,
     });
-    localStorage.setItem("token", data.token);
+    setAccessToken(data.token);
     setUser(data.user);
     return data.user;
   }
 
   function logout() {
-    localStorage.removeItem("token");
+    // Efface le cookie côté serveur (best-effort, on ne bloque pas sur l'erreur)
+    api("/auth/logout", { method: "POST" }).catch(() => {});
+    setAccessToken(null);
     setUser(null);
   }
 

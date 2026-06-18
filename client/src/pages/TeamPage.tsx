@@ -1,60 +1,51 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../lib/api";
-import type { Member, Role } from "../types";
+import { queryKeys, fetchMembers } from "../lib/queries";
+import type { Role } from "../types";
 
 export function TeamPage() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
 
-  const [members, setMembers] = useState<Member[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data, isLoading: loading } = useQuery({
+    queryKey: queryKeys.members(),
+    queryFn: fetchMembers,
+  });
+  const members = data?.members ?? [];
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<Role>("MEMBER");
   const [formError, setFormError] = useState("");
-  const [submitting, setSubmitting] = useState(false);
 
-  async function loadMembers() {
-    setLoading(true);
-    try {
-      const data = await api<{ members: Member[] }>("/members");
-      setMembers(data.members);
-    } catch {
-      // liste vide en cas d'erreur
-    } finally {
-      setLoading(false);
-    }
-  }
+  const addMutation = useMutation({
+    mutationFn: (body: { name: string; email: string; password: string; role: Role }) =>
+      api("/members", { method: "POST", body }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.members() });
+      setName(""); setEmail(""); setPassword(""); setRole("MEMBER");
+    },
+    onError: (err) => setFormError(err instanceof Error ? err.message : "Erreur"),
+  });
 
-  useEffect(() => {
-    loadMembers();
-  }, []);
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api(`/members/${id}`, { method: "DELETE" }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.members() }),
+    onError: (err) => alert(err instanceof Error ? err.message : "Erreur"),
+  });
 
-  async function handleAdd(e: FormEvent) {
+  function handleAdd(e: FormEvent) {
     e.preventDefault();
     setFormError("");
-    setSubmitting(true);
-    try {
-      await api("/members", { method: "POST", body: { name, email, password, role } });
-      setName(""); setEmail(""); setPassword(""); setRole("MEMBER");
-      await loadMembers();
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Erreur");
-    } finally {
-      setSubmitting(false);
-    }
+    addMutation.mutate({ name, email, password, role });
   }
 
-  async function handleDelete(id: string) {
+  function handleDelete(id: string) {
     if (!confirm("Supprimer ce membre ?")) return;
-    try {
-      await api(`/members/${id}`, { method: "DELETE" });
-      await loadMembers();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Erreur");
-    }
+    deleteMutation.mutate(id);
   }
 
   return (
@@ -82,9 +73,9 @@ export function TeamPage() {
               <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{formError}</p>
             )}
 
-            <button type="submit" disabled={submitting}
+            <button type="submit" disabled={addMutation.isPending}
               className="w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:opacity-60">
-              {submitting ? "Ajout…" : "Ajouter le membre"}
+              {addMutation.isPending ? "Ajout…" : "Ajouter le membre"}
             </button>
           </form>
         </section>
@@ -124,7 +115,11 @@ export function TeamPage() {
                     </td>
                     <td className="px-6 py-3 text-right">
                       {m.id !== user?.id && (
-                        <button onClick={() => handleDelete(m.id)} className="text-xs text-red-600 transition hover:text-red-800">
+                        <button
+                          onClick={() => handleDelete(m.id)}
+                          disabled={deleteMutation.isPending}
+                          className="text-xs text-red-600 transition hover:text-red-800 disabled:opacity-50"
+                        >
                           Supprimer
                         </button>
                       )}

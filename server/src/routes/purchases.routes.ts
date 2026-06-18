@@ -1,12 +1,13 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma";
 import { authenticate, requireAdmin } from "../middleware/auth";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 const router = Router();
 
 router.use(authenticate, requireAdmin);
 
-router.get("/summary", async (_req, res) => {
+router.get("/summary", asyncHandler(async (_req, res) => {
   const products = await prisma.product.findMany({
     orderBy: { name: "asc" },
     select: {
@@ -17,10 +18,7 @@ router.get("/summary", async (_req, res) => {
       initialStock: true,
       price: true,
       orderItems: {
-        select: {
-          quantity: true,
-          unitPrice: true,
-        },
+        select: { quantity: true, unitPrice: true },
       },
     },
   });
@@ -34,7 +32,6 @@ router.get("/summary", async (_req, res) => {
       (total, item) => total + item.quantity * item.unitPrice,
       0
     );
-
     return {
       id: product.id,
       name: product.name,
@@ -48,6 +45,6 @@ router.get("/summary", async (_req, res) => {
   });
 
   return res.json({ summary });
-});
+}));
 
 export default router;

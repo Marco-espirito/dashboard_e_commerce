@@ -1,0 +1,113 @@
+name: CI
+
+# Déclenché sur chaque push vers main/develop et sur les Pull Requests vers main
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+# ─── Jobs ─────────────────────────────────────────────────────────────────────
+
+jobs:
+  # ── 1. Vérification des types TypeScript ─────────────────────────────────────
+  typecheck:
+    name: TypeScript
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            client/package-lock.json
+
+      - name: Installer les dépendances (server)
+        run: npm ci
+        working-directory: server
+
+      - name: Installer les dépendances (client)
+        run: npm ci
+        working-directory: client
+
+      - name: Générer le client Prisma
+        run: npx prisma generate
+        working-directory: server
+
+      - name: Typecheck server
+        run: npx tsc --noEmit
+        working-directory: server
+
+      - name: Typecheck client
+        run: npx tsc -b --noEmit
+        working-directory: client
+
+  # ── 2. Tests d'intégration ────────────────────────────────────────────────────
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+
+    # Base de données PostgreSQL démarrée comme service Docker
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci_postgres_password
+          POSTGRES_DB: admin_rbac_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    # Variables d'environnement pour le job de test
+    # Les secrets sensibles (JWT_SECRET, etc.) sont gérés via GitHub Secrets.
+    # La DATABASE_URL pointe vers le service postgres ci-dessus.
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:ci_postgres_password@localhost:5432/admin_rbac_test?schema=public
+      JWT_SECRET: ${{ secrets.JWT_SECRET || 'ci-jwt-secret-minimum-16-chars-long' }}
+      REFRESH_SECRET: ${{ secrets.REFRESH_SECRET || 'ci-refresh-secret-minimum-16-chars' }}
+      JWT_EXPIRES_IN: 15m
+      PORT: 4001
+      CORS_ORIGIN: http://localhost:5173
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Installer les dépendances
+        run: npm ci
+        working-directory: server
+
+      - name: Générer le client Prisma
+        run: npx prisma generate
+        working-directory: server
+
+      - name: Appliquer les migrations sur la base de test
+        run: npx prisma migrate deploy
+        working-directory: server
+
+      - name: Lancer les tests
+        run: npm test
+        working-directory: server
+
+      - name: Rapport de couverture (upload artefact)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: server/coverage/
+          retention-days: 7

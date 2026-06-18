@@ -1,49 +1,19 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../context/AuthContext";
-import { api } from "../lib/api";
-
-interface AdminNotifications {
-  counts: {
-    pendingOrders: number;
-    cancelledOrders: number;
-    lowStockProducts: number;
-    total: number;
-  };
-  pendingOrders: { id: string; customer: string }[];
-  cancelledOrders: { id: string; customer: string }[];
-  lowStockProducts: { id: string; name: string; stock: number }[];
-}
+import { queryKeys, fetchNotifications } from "../lib/queries";
 
 export function AdminLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [notifications, setNotifications] = useState<AdminNotifications | null>(
-    null
-  );
   const [notificationsOpen, setNotificationsOpen] = useState(false);
 
-  async function loadNotifications() {
-    try {
-      const data = await api<AdminNotifications>("/notifications");
-      setNotifications(data);
-    } catch {
-      setNotifications(null);
-    }
-  }
-
-  useEffect(() => {
-    loadNotifications();
-
-    function handleRefresh() {
-      loadNotifications();
-    }
-
-    window.addEventListener("admin-notifications:refresh", handleRefresh);
-    return () => {
-      window.removeEventListener("admin-notifications:refresh", handleRefresh);
-    };
-  }, []);
+  const { data: notifications } = useQuery({
+    queryKey: queryKeys.notifications(),
+    queryFn: fetchNotifications,
+    refetchInterval: 60_000,
+  });
 
   function handleLogout() {
     logout();
@@ -93,16 +63,7 @@ export function AdminLayout() {
             >
               <span className="flex items-center gap-2 text-sm font-medium text-amber-800">
                 <span className="relative flex h-8 w-8 items-center justify-center rounded-full bg-white text-amber-700">
-                  <svg
-                    viewBox="0 0 24 24"
-                    aria-hidden="true"
-                    className="h-4 w-4"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
+                  <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 7h18s-3 0-3-7" />
                     <path d="M13.73 21a2 2 0 0 1-3.46 0" />
                   </svg>
@@ -120,34 +81,21 @@ export function AdminLayout() {
             {notificationsOpen && (
               <div className="mt-2 space-y-2 rounded-xl border border-amber-100 bg-white p-2 text-xs shadow-sm">
                 {notifications.counts.pendingOrders > 0 && (
-                  <NavLink
-                    to="/admin/commandes?status=PENDING"
-                    onClick={() => setNotificationsOpen(false)}
-                    className="block rounded-lg px-2 py-1.5 text-amber-800 transition hover:bg-amber-50"
-                  >
-                    {notifications.counts.pendingOrders} commande
-                    {notifications.counts.pendingOrders > 1 ? "s" : ""} en attente
+                  <NavLink to="/admin/commandes?status=PENDING" onClick={() => setNotificationsOpen(false)}
+                    className="block rounded-lg px-2 py-1.5 text-amber-800 transition hover:bg-amber-50">
+                    {notifications.counts.pendingOrders} commande{notifications.counts.pendingOrders > 1 ? "s" : ""} en attente
                   </NavLink>
                 )}
                 {notifications.counts.cancelledOrders > 0 && (
-                  <NavLink
-                    to="/admin/commandes?status=CANCELLED"
-                    onClick={() => setNotificationsOpen(false)}
-                    className="block rounded-lg px-2 py-1.5 text-red-700 transition hover:bg-red-50"
-                  >
-                    {notifications.counts.cancelledOrders} commande
-                    {notifications.counts.cancelledOrders > 1 ? "s" : ""} annulee
-                    {notifications.counts.cancelledOrders > 1 ? "s" : ""}
+                  <NavLink to="/admin/commandes?status=CANCELLED" onClick={() => setNotificationsOpen(false)}
+                    className="block rounded-lg px-2 py-1.5 text-red-700 transition hover:bg-red-50">
+                    {notifications.counts.cancelledOrders} commande{notifications.counts.cancelledOrders > 1 ? "s" : ""} annulee{notifications.counts.cancelledOrders > 1 ? "s" : ""}
                   </NavLink>
                 )}
                 {notifications.counts.lowStockProducts > 0 && (
-                  <NavLink
-                    to="/admin/produits?stock=low"
-                    onClick={() => setNotificationsOpen(false)}
-                    className="block rounded-lg px-2 py-1.5 text-slate-700 transition hover:bg-slate-50"
-                  >
-                    {notifications.counts.lowStockProducts} produit
-                    {notifications.counts.lowStockProducts > 1 ? "s" : ""} en stock faible
+                  <NavLink to="/admin/produits?stock=low" onClick={() => setNotificationsOpen(false)}
+                    className="block rounded-lg px-2 py-1.5 text-slate-700 transition hover:bg-slate-50">
+                    {notifications.counts.lowStockProducts} produit{notifications.counts.lowStockProducts > 1 ? "s" : ""} en stock faible
                   </NavLink>
                 )}
               </div>
@@ -158,10 +106,8 @@ export function AdminLayout() {
         <div className="mt-4 border-t border-slate-200 pt-4">
           <div className="px-2 text-sm font-medium text-slate-900">{user?.name}</div>
           <div className="px-2 text-xs text-slate-400">Administrateur</div>
-          <button
-            onClick={handleLogout}
-            className="mt-3 w-full rounded-lg px-3 py-2 text-left text-sm text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
-          >
+          <button onClick={handleLogout}
+            className="mt-3 w-full rounded-lg px-3 py-2 text-left text-sm text-slate-500 transition hover:bg-slate-100 hover:text-slate-900">
             Se déconnecter
           </button>
         </div>
@@ -178,21 +124,9 @@ export function AdminLayout() {
           <div className="flex items-center gap-3">
             {notifications && notificationCount > 0 && (
               <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setNotificationsOpen((open) => !open)}
-                  className="relative flex h-9 w-9 items-center justify-center rounded-full bg-amber-50 text-amber-700"
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    aria-hidden="true"
-                    className="h-4 w-4"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
+                <button type="button" onClick={() => setNotificationsOpen((open) => !open)}
+                  className="relative flex h-9 w-9 items-center justify-center rounded-full bg-amber-50 text-amber-700">
+                  <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 7h18s-3 0-3-7" />
                     <path d="M13.73 21a2 2 0 0 1-3.46 0" />
                   </svg>
@@ -204,29 +138,20 @@ export function AdminLayout() {
                 {notificationsOpen && (
                   <div className="absolute right-0 top-11 z-20 w-56 space-y-2 rounded-xl border border-slate-200 bg-white p-2 text-xs shadow-lg">
                     {notifications.counts.pendingOrders > 0 && (
-                      <NavLink
-                        to="/admin/commandes?status=PENDING"
-                        onClick={() => setNotificationsOpen(false)}
-                        className="block rounded-lg px-2 py-1.5 text-amber-800 transition hover:bg-amber-50"
-                      >
+                      <NavLink to="/admin/commandes?status=PENDING" onClick={() => setNotificationsOpen(false)}
+                        className="block rounded-lg px-2 py-1.5 text-amber-800 transition hover:bg-amber-50">
                         {notifications.counts.pendingOrders} commandes en attente
                       </NavLink>
                     )}
                     {notifications.counts.cancelledOrders > 0 && (
-                      <NavLink
-                        to="/admin/commandes?status=CANCELLED"
-                        onClick={() => setNotificationsOpen(false)}
-                        className="block rounded-lg px-2 py-1.5 text-red-700 transition hover:bg-red-50"
-                      >
+                      <NavLink to="/admin/commandes?status=CANCELLED" onClick={() => setNotificationsOpen(false)}
+                        className="block rounded-lg px-2 py-1.5 text-red-700 transition hover:bg-red-50">
                         {notifications.counts.cancelledOrders} commandes annulees
                       </NavLink>
                     )}
                     {notifications.counts.lowStockProducts > 0 && (
-                      <NavLink
-                        to="/admin/produits?stock=low"
-                        onClick={() => setNotificationsOpen(false)}
-                        className="block rounded-lg px-2 py-1.5 text-slate-700 transition hover:bg-slate-50"
-                      >
+                      <NavLink to="/admin/produits?stock=low" onClick={() => setNotificationsOpen(false)}
+                        className="block rounded-lg px-2 py-1.5 text-slate-700 transition hover:bg-slate-50">
                         {notifications.counts.lowStockProducts} produits en stock faible
                       </NavLink>
                     )}

@@ -1,19 +1,19 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma";
 import { authenticate, requireAdmin } from "../middleware/auth";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 const router = Router();
 
-// 🔒 Stats réservées aux admins
 router.use(authenticate, requireAdmin);
 
 const REVENUE_STATUSES = ["PAID", "SHIPPED", "DELIVERED"] as const;
 function monthKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
+
 // GET /api/stats/overview
-router.get("/overview", async (_req, res) => {
-  // Totaux
+router.get("/overview", asyncHandler(async (_req, res) => {
   const revenueAgg = await prisma.order.aggregate({
     where: { status: { in: [...REVENUE_STATUSES] } },
     _sum: { total: true },
@@ -26,7 +26,7 @@ router.get("/overview", async (_req, res) => {
   const avgBasket =
     revenueOrdersCount > 0 ? Math.round(revenueTotal / revenueOrdersCount) : 0;
   const productsCount = await prisma.product.count();
-  // CA des 6 derniers mois (agrégé en JS)
+
   const firstRevenueOrder = await prisma.order.findFirst({
     where: { status: { in: [...REVENUE_STATUSES] } },
     orderBy: { createdAt: "asc" },
@@ -63,7 +63,7 @@ router.get("/overview", async (_req, res) => {
   const revenueByMonth = Array.from(monthMap.entries()).map(
     ([month, revenue]) => ({ month, revenue })
   );
-  // Top produits (par CA généré)
+
   const items = await prisma.orderItem.findMany({
     select: {
       quantity: true,
@@ -83,7 +83,6 @@ router.get("/overview", async (_req, res) => {
     .sort((a, b) => b.revenue - a.revenue)
     .slice(0, 5);
 
-  // Stock faible (<= 10 unités)
   const lowStock = await prisma.product.findMany({
     where: { stock: { lte: 10 } },
     orderBy: { stock: "asc" },
@@ -91,12 +90,12 @@ router.get("/overview", async (_req, res) => {
     select: { id: true, name: true, stock: true },
   });
 
-  // Commandes récentes
   const recentOrders = await prisma.order.findMany({
     orderBy: { createdAt: "desc" },
     take: 8,
     select: { id: true, customer: true, total: true, status: true, createdAt: true },
   });
+
   return res.json({
     revenueTotal,
     ordersCount,
@@ -107,6 +106,6 @@ router.get("/overview", async (_req, res) => {
     lowStock,
     recentOrders,
   });
-});
+}));
 
 export default router;

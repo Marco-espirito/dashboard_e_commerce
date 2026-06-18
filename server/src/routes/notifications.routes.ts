@@ -1,12 +1,13 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma";
 import { authenticate, requireAdmin } from "../middleware/auth";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 const router = Router();
 
 router.use(authenticate, requireAdmin);
 
-router.get("/", async (_req, res) => {
+router.get("/", asyncHandler(async (_req, res) => {
   const [pendingOrders, cancelledOrders, lowStockProducts] = await Promise.all([
     prisma.order.findMany({
       where: { status: "PENDING" },
@@ -45,6 +46,6 @@ router.get("/", async (_req, res) => {
     cancelledOrders,
     lowStockProducts,
   });
-});
+}));
 
 export default router;
