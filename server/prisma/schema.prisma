@@ -1,0 +1,65 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  MEMBER
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  password  String
+  role      Role     @default(MEMBER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Trace de l'admin qui a créé ce membre
+  createdById String?
+  createdBy   User?    @relation("CreatedMembers", fields: [createdById], references: [id])
+  members     User[]   @relation("CreatedMembers")
+}
+enum OrderStatus {
+  PENDING
+  PAID
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+model Product {
+  id         String      @id @default(cuid())
+  name       String
+  price      Int // prix en centimes (évite les flottants)
+  stock      Int         @default(0)
+  initialStock Int       @default(0)
+  category   String?
+  createdAt  DateTime    @default(now())
+  orderItems OrderItem[]
+}
+
+model Order {
+  id        String      @id @default(cuid())
+  customer  String // nom du client (simplifié)
+  status    OrderStatus @default(PAID)
+  total     Int // total en centimes
+  createdAt DateTime    @default(now())
+  items     OrderItem[]
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+  quantity  Int
+  unitPrice Int // prix au moment de la commande (centimes)
+}
