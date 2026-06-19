@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { authenticate, requireAdmin } from "../middleware/auth";
 import { asyncHandler } from "../middleware/asyncHandler";
@@ -6,6 +7,22 @@ import { asyncHandler } from "../middleware/asyncHandler";
 const router = Router();
 
 router.use(authenticate, requireAdmin);
+
+/** Agrège les quantités vendues par produit sur une période (hors annulées). */
+async function topProductsBetween(start: Date, end: Date) {
+  const items = await prisma.orderItem.findMany({
+    where: { order: { createdAt: { gte: start, lt: end }, status: { not: "CANCELLED" } } },
+    select: { quantity: true, product: { select: { name: true } } },
+  });
+  const map = new Map<string, number>();
+  for (const it of items) {
+    map.set(it.product.name, (map.get(it.product.name) ?? 0) + it.quantity);
+  }
+  return Array.from(map.entries())
+    .map(([name, sold]) => ({ name, sold }))
+    .sort((a, b) => b.sold - a.sold)
+    .slice(0, 5);
+}
 
 const REVENUE_STATUSES = ["PAID", "SHIPPED", "DELIVERED"] as const;
 function monthKey(d: Date): string {
@@ -135,21 +152,8 @@ router.get("/overview", asyncHandler(async (_req, res) => {
     : null;
 
   // Produits les plus vendus ce mois-ci (hors commandes annulées)
-  const monthItems = await prisma.orderItem.findMany({
-    where: { order: { createdAt: { gte: startOfMonth }, status: { not: "CANCELLED" } } },
-    select: { quantity: true, product: { select: { name: true } } },
-  });
-  const monthProductMap = new Map<string, number>();
-  for (const it of monthItems) {
-    monthProductMap.set(
-      it.product.name,
-      (monthProductMap.get(it.product.name) ?? 0) + it.quantity
-    );
-  }
-  const topProductsThisMonth = Array.from(monthProductMap.entries())
-    .map(([name, sold]) => ({ name, sold }))
-    .sort((a, b) => b.sold - a.sold)
-    .slice(0, 5);
+  const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const topProductsThisMonth = await topProductsBetween(startOfMonth, nextMonth);
 
   return res.json({
     revenueTotal,
@@ -167,6 +171,32 @@ router.get("/overview", asyncHandler(async (_req, res) => {
     bestClient,
     topProductsThisMonth,
   });
+}));
+
+// GET /api/stats/top-products?month=YYYY-MM
+// Top produits vendus sur un mois donné (défaut : mois courant).
+const topProductsSchema = z.object({
+  month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+});
+
+router.get("/top-products", asyncHandler(async (req, res) => {
+  const parsed = topProductsSchema.safeParse(req.query);
+  const now = new Date();
+  let year = now.getFullYear();
+  let monthIndex = now.getMonth(); // 0-based
+
+  if (parsed.success && parsed.data.month) {
+    const [y, m] = parsed.data.month.split("-").map(Number);
+    year = y;
+    monthIndex = m - 1;
+  }
+
+  const start = new Date(year, monthIndex, 1);
+  const end = new Date(year, monthIndex + 1, 1);
+  const products = await topProductsBetween(start, end);
+  const month = `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
+
+  return res.json({ month, products });
 }));
 
 export default router;

@@ -4,6 +4,7 @@ import { api } from "./api";
 
 export const queryKeys = {
   stats: () => ["stats", "overview"] as const,
+  topProducts: (month: string) => ["stats", "top-products", month] as const,
   purchases: () => ["purchases", "summary"] as const,
   notifications: () => ["notifications"] as const,
   members: () => ["members"] as const,
@@ -36,6 +37,13 @@ export interface ProductsParams {
 
 export function fetchStats() {
   return api<Stats>("/stats/overview");
+}
+
+export function fetchTopProducts(month: string) {
+  const p = month ? `?month=${encodeURIComponent(month)}` : "";
+  return api<{ month: string; products: { name: string; sold: number }[] }>(
+    `/stats/top-products${p}`
+  );
 }
 
 export function fetchPurchases() {

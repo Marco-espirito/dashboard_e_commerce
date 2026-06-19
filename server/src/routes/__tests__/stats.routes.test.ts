@@ -91,3 +91,29 @@ describe("GET /api/stats/overview — KPIs", () => {
     expect(top.find((p: { name: string }) => p.name === "Produit A").sold).toBe(3);
   });
 });
+
+describe("GET /api/stats/top-products", () => {
+  it("retourne le top du mois courant par défaut", async () => {
+    const res = await request(app)
+      .get("/api/stats/top-products")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.products[0]).toMatchObject({ name: "Produit A", sold: 3 });
+  });
+
+  it("retourne une liste vide pour un mois sans vente", async () => {
+    const res = await request(app)
+      .get("/api/stats/top-products?month=2020-01")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.month).toBe("2020-01");
+    expect(res.body.products).toEqual([]);
+  });
+
+  it("retourne 403 pour un membre", async () => {
+    const res = await request(app)
+      .get("/api/stats/top-products")
+      .set("Authorization", `Bearer ${makeMemberToken("x")}`);
+    expect(res.status).toBe(403);
+  });
+});

@@ -4,7 +4,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from "recharts";
 import { formatPrice } from "../lib/format";
-import { queryKeys, fetchStats } from "../lib/queries";
+import { queryKeys, fetchStats, fetchTopProducts } from "../lib/queries";
 
 import type { OrderStatus } from "../lib/queries";
 
@@ -47,6 +47,13 @@ export function DashboardPage() {
   const [customStartMonth, setCustomStartMonth] = useState("");
   const [customEndMonth, setCustomEndMonth] = useState("");
 
+  // Mois sélectionné pour la carte "produits les plus vendus" ("" = mois courant)
+  const [topMonth, setTopMonth] = useState("");
+  const { data: topProductsData } = useQuery({
+    queryKey: queryKeys.topProducts(topMonth),
+    queryFn: () => fetchTopProducts(topMonth),
+  });
+
   if (loading) return <p className="text-sm text-slate-400">Chargement…</p>;
   if (error || !stats) return <p className="text-sm text-red-600">{error instanceof Error ? error.message : "Aucune donnée"}</p>;
 
@@ -60,6 +67,11 @@ export function DashboardPage() {
   const monthOptions = stats.revenueByMonth;
   const firstMonth = monthOptions[0]?.month ?? "";
   const lastMonth = monthOptions[monthOptions.length - 1]?.month ?? "";
+
+  // Carte "produits les plus vendus" : mois courant par défaut (topMonth = "")
+  const currentMonthKey = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+  const selectedTopMonth = topMonth || currentMonthKey;
+  const topProducts = topProductsData?.products ?? [];
   const yearOptions = Array.from(
     new Set(monthOptions.map((m) => m.month.slice(0, 4)))
   );
@@ -250,14 +262,27 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* Produits les plus vendus ce mois-ci */}
+      {/* Produits les plus vendus — par mois */}
       <div className="rounded-2xl border border-slate-200 bg-white p-6">
-        <h2 className="text-sm font-semibold text-slate-900">Produits les plus vendus ce mois-ci</h2>
-        {stats.topProductsThisMonth.length === 0 ? (
-          <p className="mt-4 text-sm text-slate-400">Aucune vente enregistrée ce mois-ci.</p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold text-slate-900">Produits les plus vendus</h2>
+          <select
+            value={selectedTopMonth}
+            onChange={(e) => setTopMonth(e.target.value)}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 outline-none transition hover:bg-slate-50 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+          >
+            {monthOptions.map((m) => (
+              <option key={m.month} value={m.month}>
+                {formatMonth(m.month)}
+              </option>
+            ))}
+          </select>
+        </div>
+        {topProducts.length === 0 ? (
+          <p className="mt-4 text-sm text-slate-400">Aucune vente enregistrée sur ce mois.</p>
         ) : (
           <ul className="mt-4 space-y-3">
-            {stats.topProductsThisMonth.map((p, i) => (
+            {topProducts.map((p, i) => (
               <li key={p.name} className="flex items-center justify-between text-sm">
                 <span className="flex items-center gap-3">
                   <span className="flex h-6 w-6 items-center justify-center rounded-md bg-indigo-50 text-xs font-semibold text-indigo-600">
