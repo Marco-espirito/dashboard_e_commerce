@@ -10,9 +10,8 @@ import { MemberDashboard } from "./pages/MemberDashboard";
 import { OrdersPage } from "./pages/OrdersPage";
 import { ProductsPage } from "./pages/ProductsPage";
 import { PurchasesPage } from "./pages/PurchasesPage";
-import { SessionsPage } from "./pages/SessionsPage";
-import { SecurityPage } from "./pages/SecurityPage";
 import { InventoryPage } from "./pages/InventoryPage";
+import { SettingsPage } from "./pages/SettingsPage";
 
 function HomeRedirect() {
   const { user, loading } = useAuth();
@@ -42,8 +41,9 @@ export default function App() {
             <Route path="inventaire" element={<InventoryPage />} />
             <Route path="achats" element={<PurchasesPage />} />
             <Route path="equipe" element={<TeamPage />} />
-            <Route path="sessions" element={<SessionsPage />} />
-            <Route path="securite" element={<SecurityPage />} />
+            <Route path="parametres" element={<SettingsPage />} />
+            <Route path="sessions" element={<Navigate to="/admin/parametres?onglet=sessions" replace />} />
+            <Route path="securite" element={<Navigate to="/admin/parametres?onglet=securite" replace />} />
           </Route>
 
           <Route

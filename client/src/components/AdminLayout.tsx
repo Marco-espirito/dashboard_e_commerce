@@ -51,20 +51,14 @@ export function AdminLayout() {
            <NavLink to="/admin/commandes" className={linkClass}>
             Commandes
           </NavLink>
-          <NavLink to="/admin/produits" className={linkClass}>
-            Produits
-          </NavLink>
           <NavLink to="/admin/inventaire" className={linkClass}>
             Inventaire
           </NavLink>
           <NavLink to="/admin/equipe" className={linkClass}>
             Équipe
           </NavLink>
-          <NavLink to="/admin/sessions" className={linkClass}>
-            Sessions
-          </NavLink>
-          <NavLink to="/admin/securite" className={linkClass}>
-            Sécurité
+          <NavLink to="/admin/parametres" className={linkClass}>
+            Parametres
           </NavLink>
         </nav>
 
@@ -107,7 +101,7 @@ export function AdminLayout() {
                   </NavLink>
                 )}
                 {notifications.counts.lowStockProducts > 0 && (
-                  <NavLink to="/admin/produits?stock=low" onClick={() => setNotificationsOpen(false)}
+                  <NavLink to="/admin/inventaire" onClick={() => setNotificationsOpen(false)}
                     className="block rounded-lg px-2 py-1.5 text-slate-700 transition hover:bg-slate-50">
                     {notifications.counts.lowStockProducts} produit{notifications.counts.lowStockProducts > 1 ? "s" : ""} en stock faible
                   </NavLink>
@@ -132,11 +126,9 @@ export function AdminLayout() {
           <nav className="flex gap-1">
             <NavLink to="/admin" end className={linkClass}>Dashboard</NavLink>
             <NavLink to="/admin/commandes" className={linkClass}>Commandes</NavLink>
-            <NavLink to="/admin/produits" className={linkClass}>Produits</NavLink>
             <NavLink to="/admin/inventaire" className={linkClass}>Inventaire</NavLink>
             <NavLink to="/admin/equipe" className={linkClass}>Équipe</NavLink>
-            <NavLink to="/admin/sessions" className={linkClass}>Sessions</NavLink>
-            <NavLink to="/admin/securite" className={linkClass}>Sécurité</NavLink>
+            <NavLink to="/admin/parametres" className={linkClass}>Parametres</NavLink>
           </nav>
           <div className="flex items-center gap-3">
             {notifications && notificationCount > 0 && (
@@ -167,7 +159,7 @@ export function AdminLayout() {
                       </NavLink>
                     )}
                     {notifications.counts.lowStockProducts > 0 && (
-                      <NavLink to="/admin/produits?stock=low" onClick={() => setNotificationsOpen(false)}
+                      <NavLink to="/admin/inventaire" onClick={() => setNotificationsOpen(false)}
                         className="block rounded-lg px-2 py-1.5 text-slate-700 transition hover:bg-slate-50">
                         {notifications.counts.lowStockProducts} produits en stock faible
                       </NavLink>

@@ -6,6 +6,7 @@ import {
   fetchInventory,
   fetchMovements,
   createMovement,
+  createProduct,
   type StockStatus,
   type StockMovementType,
 } from "../lib/queries";
@@ -32,23 +33,53 @@ const FORM_TYPES: { value: Exclude<StockMovementType, "SALE">; label: string }[]
   { value: "MANUAL_CORRECTION", label: "Correction manuelle" },
 ];
 
+const PER_PAGE = 8;
+
+type SideForm = "movement" | "product";
+
+interface ProductForm {
+  name: string;
+  price: string;
+  stock: string;
+  category: string;
+}
+
+const EMPTY_PRODUCT_FORM: ProductForm = { name: "", price: "", stock: "", category: "" };
+
+function toCents(value: string): number {
+  return Math.round(Number(value.replace(",", ".")) * 100);
+}
+
 export function InventoryPage() {
   const queryClient = useQueryClient();
   const [typeFilter, setTypeFilter] = useState<"" | StockMovementType>("");
+  const [inventoryPage, setInventoryPage] = useState(1);
+  const [movementsPage, setMovementsPage] = useState(1);
+  const [sideForm, setSideForm] = useState<SideForm>("movement");
+
+  const inventoryParams = { page: inventoryPage, limit: PER_PAGE };
+  const movementsParams = {
+    page: movementsPage,
+    limit: PER_PAGE,
+    ...(typeFilter ? { type: typeFilter } : {}),
+  };
 
   const { data: inv, isLoading } = useQuery({
-    queryKey: queryKeys.inventory(),
-    queryFn: fetchInventory,
+    queryKey: queryKeys.inventory(inventoryParams),
+    queryFn: () => fetchInventory(inventoryParams),
   });
 
   const { data: movementsData } = useQuery({
-    queryKey: queryKeys.movements(typeFilter),
-    queryFn: () => fetchMovements(typeFilter ? { type: typeFilter } : {}),
+    queryKey: queryKeys.movements(movementsParams),
+    queryFn: () => fetchMovements(movementsParams),
   });
 
   const items = inv?.items ?? [];
+  const productOptions = inv?.productOptions ?? [];
   const totals = inv?.totals;
   const movements = movementsData?.movements ?? [];
+  const inventoryTotalPages = inv?.totalPages ?? 1;
+  const movementsTotalPages = movementsData?.totalPages ?? 1;
 
   // ── Formulaire d'ajout de mouvement ──
   const [productId, setProductId] = useState("");
@@ -56,12 +87,14 @@ export function InventoryPage() {
   const [quantity, setQuantity] = useState("");
   const [reason, setReason] = useState("");
   const [formError, setFormError] = useState("");
+  const [productForm, setProductForm] = useState<ProductForm>(EMPTY_PRODUCT_FORM);
+  const [productError, setProductError] = useState("");
 
   const mutation = useMutation({
     mutationFn: () =>
       createMovement({ productId, type, quantity: Number(quantity), reason: reason || undefined }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventory() });
+      queryClient.invalidateQueries({ queryKey: ["inventory"] });
       queryClient.invalidateQueries({ queryKey: ["inventory", "movements"] });
       queryClient.invalidateQueries({ queryKey: ["products"] });
       queryClient.invalidateQueries({ queryKey: queryKeys.stats() });
@@ -70,12 +103,59 @@ export function InventoryPage() {
     onError: (e) => setFormError(e instanceof Error ? e.message : "Erreur"),
   });
 
+  const productMutation = useMutation({
+    mutationFn: () => {
+      const price = toCents(productForm.price);
+      const stock = Number(productForm.stock);
+      return createProduct({
+        name: productForm.name,
+        price,
+        stock,
+        category: productForm.category.trim() || null,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["inventory"] });
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.notifications() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stats() });
+      setProductForm(EMPTY_PRODUCT_FORM);
+      setProductError("");
+      setInventoryPage(1);
+    },
+    onError: (e) => setProductError(e instanceof Error ? e.message : "Erreur"),
+  });
+
   function submit(e: FormEvent) {
     e.preventDefault();
     setFormError("");
     if (!productId) { setFormError("Sélectionne un produit."); return; }
     if (!quantity || Number(quantity) === 0) { setFormError("Quantité invalide."); return; }
     mutation.mutate();
+  }
+
+  function updateProductForm(field: keyof ProductForm, value: string) {
+    setProductForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function submitProduct(e: FormEvent) {
+    e.preventDefault();
+    setProductError("");
+    const price = toCents(productForm.price);
+    const stock = Number(productForm.stock);
+    if (productForm.name.trim().length < 2) {
+      setProductError("Le nom doit faire au moins 2 caracteres.");
+      return;
+    }
+    if (!Number.isFinite(price) || price < 0) {
+      setProductError("Prix invalide.");
+      return;
+    }
+    if (!Number.isInteger(stock) || stock < 0) {
+      setProductError("Stock invalide.");
+      return;
+    }
+    productMutation.mutate();
   }
 
   if (isLoading || !totals) return <p className="text-sm text-slate-400">Chargement…</p>;
@@ -154,11 +234,59 @@ export function InventoryPage() {
         </table>
       </div>
 
+      {inventoryTotalPages > 1 && (
+        <div className="flex items-center justify-end gap-3">
+          <span className="text-sm text-slate-500">Page {inventoryPage} sur {inventoryTotalPages}</span>
+          <button
+            type="button"
+            onClick={() => setInventoryPage((page) => Math.max(1, page - 1))}
+            disabled={inventoryPage === 1}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+          >
+            Precedent
+          </button>
+          <button
+            type="button"
+            onClick={() => setInventoryPage((page) => Math.min(inventoryTotalPages, page + 1))}
+            disabled={inventoryPage === inventoryTotalPages}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+          >
+            Suivant
+          </button>
+        </div>
+      )}
+
       {/* Mouvements de stock */}
       <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
         {/* Formulaire */}
         <section className="h-fit rounded-2xl border border-slate-200 bg-white p-6">
-          <h2 className="text-sm font-semibold text-slate-900">Nouveau mouvement</h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold text-slate-900">
+              {sideForm === "movement" ? "Nouveau mouvement" : "Ajouter un produit"}
+            </h2>
+            <div className="flex rounded-lg bg-slate-100 p-1">
+              <button
+                type="button"
+                onClick={() => setSideForm("movement")}
+                className={sideForm === "movement"
+                  ? "rounded-md bg-white px-2.5 py-1 text-xs font-medium text-indigo-700 shadow-sm"
+                  : "rounded-md px-2.5 py-1 text-xs font-medium text-slate-500 transition hover:text-slate-900"}
+              >
+                Mouvement
+              </button>
+              <button
+                type="button"
+                onClick={() => setSideForm("product")}
+                className={sideForm === "product"
+                  ? "rounded-md bg-white px-2.5 py-1 text-xs font-medium text-indigo-700 shadow-sm"
+                  : "rounded-md px-2.5 py-1 text-xs font-medium text-slate-500 transition hover:text-slate-900"}
+              >
+                Produit
+              </button>
+            </div>
+          </div>
+
+          {sideForm === "movement" ? (
           <form onSubmit={submit} className="mt-4 space-y-3">
             <select
               value={productId}
@@ -166,7 +294,7 @@ export function InventoryPage() {
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
             >
               <option value="">Choisir un produit…</option>
-              {items.map((it) => (
+              {productOptions.map((it) => (
                 <option key={it.id} value={it.id}>{it.name} (stock {it.stock})</option>
               ))}
             </select>
@@ -209,6 +337,52 @@ export function InventoryPage() {
               {mutation.isPending ? "Enregistrement…" : "Enregistrer le mouvement"}
             </button>
           </form>
+          ) : (
+          <form onSubmit={submitProduct} className="mt-4 space-y-3">
+            <input
+              value={productForm.name}
+              onChange={(e) => updateProductForm("name", e.target.value)}
+              placeholder="Nom du produit"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+            />
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={productForm.price}
+              onChange={(e) => updateProductForm("price", e.target.value)}
+              placeholder="Prix en euros"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+            />
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={productForm.stock}
+              onChange={(e) => updateProductForm("stock", e.target.value)}
+              placeholder="Stock initial"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+            />
+            <input
+              value={productForm.category}
+              onChange={(e) => updateProductForm("category", e.target.value)}
+              placeholder="Categorie"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+            />
+
+            {productError && (
+              <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{productError}</p>
+            )}
+
+            <button
+              type="submit"
+              disabled={productMutation.isPending}
+              className="w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:opacity-60"
+            >
+              {productMutation.isPending ? "Ajout en cours..." : "Ajouter le produit"}
+            </button>
+          </form>
+          )}
         </section>
 
         {/* Historique */}
@@ -217,7 +391,10 @@ export function InventoryPage() {
             <h2 className="text-sm font-semibold text-slate-900">Mouvements de stock</h2>
             <select
               value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value as "" | StockMovementType)}
+              onChange={(e) => {
+                setTypeFilter(e.target.value as "" | StockMovementType);
+                setMovementsPage(1);
+              }}
               className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 outline-none transition hover:bg-slate-50 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
             >
               <option value="">Tous les types</option>
@@ -260,6 +437,28 @@ export function InventoryPage() {
                 ))}
               </tbody>
             </table>
+          )}
+
+          {movementsTotalPages > 1 && (
+            <div className="flex items-center justify-end gap-3 border-t border-slate-100 px-6 py-4">
+              <span className="text-sm text-slate-500">Page {movementsPage} sur {movementsTotalPages}</span>
+              <button
+                type="button"
+                onClick={() => setMovementsPage((page) => Math.max(1, page - 1))}
+                disabled={movementsPage === 1}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+              >
+                Precedent
+              </button>
+              <button
+                type="button"
+                onClick={() => setMovementsPage((page) => Math.min(movementsTotalPages, page + 1))}
+                disabled={movementsPage === movementsTotalPages}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+              >
+                Suivant
+              </button>
+            </div>
           )}
         </section>
       </div>

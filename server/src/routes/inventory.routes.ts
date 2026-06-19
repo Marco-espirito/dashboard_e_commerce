@@ -18,52 +18,94 @@ function stockStatus(stock: number): "OK" | "LOW" | "CRITICAL" {
 }
 
 // ─── GET /api/inventory ────────────────────────────────────────────────────────
-// Vue inventaire : une ligne par produit + totaux.
-router.get("/", asyncHandler(async (_req, res) => {
-  const products = await prisma.product.findMany({
-    orderBy: { name: "asc" },
-    select: {
-      id: true,
-      name: true,
-      category: true,
-      price: true,
-      stock: true,
-      initialStock: true,
-      orderItems: { select: { quantity: true } },
-    },
-  });
+const inventoryQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(8),
+});
 
-  const items = products.map((p) => {
-    const sold = p.orderItems.reduce((t, i) => t + i.quantity, 0);
-    const stockValue = p.stock * p.price;
-    return {
-      id: p.id,
-      name: p.name,
-      category: p.category,
-      stock: p.stock,
-      stockBefore: p.initialStock,
-      sold,
-      unitPrice: p.price,
-      stockValue,
-      status: stockStatus(p.stock),
-    };
-  });
+const inventoryProductSelect = {
+  id: true,
+  name: true,
+  category: true,
+  price: true,
+  stock: true,
+  initialStock: true,
+  orderItems: { select: { quantity: true } },
+} as const;
+
+function toInventoryItem(product: {
+  id: string;
+  name: string;
+  category: string | null;
+  price: number;
+  stock: number;
+  initialStock: number;
+  orderItems: { quantity: number }[];
+}) {
+  const sold = product.orderItems.reduce((t, i) => t + i.quantity, 0);
+  const stockValue = product.stock * product.price;
+  return {
+    id: product.id,
+    name: product.name,
+    category: product.category,
+    stock: product.stock,
+    stockBefore: product.initialStock,
+    sold,
+    unitPrice: product.price,
+    stockValue,
+    status: stockStatus(product.stock),
+  };
+}
+
+// Vue inventaire : une ligne par produit + totaux.
+router.get("/", asyncHandler(async (req, res) => {
+  const parsed = inventoryQuerySchema.safeParse(req.query);
+  if (!parsed.success) throw new AppError(400, parsed.error.issues[0].message);
+  const { page, limit } = parsed.data;
+
+  const [products, allProducts, total, productOptions] = await prisma.$transaction([
+    prisma.product.findMany({
+      orderBy: { name: "asc" },
+      skip: (page - 1) * limit,
+      take: limit,
+      select: inventoryProductSelect,
+    }),
+    prisma.product.findMany({
+      orderBy: { name: "asc" },
+      select: inventoryProductSelect,
+    }),
+    prisma.product.count(),
+    prisma.product.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, stock: true },
+    }),
+  ]);
+
+  const items = products.map(toInventoryItem);
+  const allItems = allProducts.map(toInventoryItem);
 
   const totals = {
-    totalProducts: items.length,
-    totalStock: items.reduce((t, i) => t + i.stock, 0),
-    totalSold: items.reduce((t, i) => t + i.sold, 0),
-    totalStockValue: items.reduce((t, i) => t + i.stockValue, 0),
-    estimatedValueBeforeSales: items.reduce((t, i) => t + i.stockBefore * i.unitPrice, 0),
+    totalProducts: allItems.length,
+    totalStock: allItems.reduce((t, i) => t + i.stock, 0),
+    totalSold: allItems.reduce((t, i) => t + i.sold, 0),
+    totalStockValue: allItems.reduce((t, i) => t + i.stockValue, 0),
+    estimatedValueBeforeSales: allItems.reduce((t, i) => t + i.stockBefore * i.unitPrice, 0),
   };
 
-  return res.json({ items, totals });
+  return res.json({
+    items,
+    totals,
+    productOptions,
+    total,
+    page,
+    totalPages: Math.ceil(total / limit),
+  });
 }));
 
 // ─── GET /api/inventory/movements ─────────────────────────────────────────────
 const movementsQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  limit: z.coerce.number().int().min(1).max(100).default(8),
   productId: z.string().optional(),
   type: z.enum(["STOCK_ADDED", "STOCK_REMOVED", "SALE", "RETURN", "MANUAL_CORRECTION"]).optional(),
 });

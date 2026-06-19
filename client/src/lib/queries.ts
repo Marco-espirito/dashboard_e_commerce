@@ -10,8 +10,8 @@ export const queryKeys = {
   members: () => ["members"] as const,
   sessions: () => ["sessions"] as const,
   twoFactorStatus: () => ["2fa", "status"] as const,
-  inventory: () => ["inventory"] as const,
-  movements: (filter: string) => ["inventory", "movements", filter] as const,
+  inventory: (params: InventoryParams) => ["inventory", params] as const,
+  movements: (params: MovementParams) => ["inventory", "movements", params] as const,
   orders: (params: OrdersParams) => ["orders", params] as const,
   products: (params: ProductsParams) => ["products", params] as const,
 };
@@ -33,6 +33,17 @@ export interface ProductsParams {
   page: number;
   limit: number;
   stock: "all" | "low";
+}
+
+export interface InventoryParams {
+  page: number;
+  limit: number;
+}
+
+export interface MovementParams {
+  page: number;
+  limit: number;
+  type?: StockMovementType;
 }
 
 // ─── Fetch functions ──────────────────────────────────────────────────────────
@@ -131,6 +142,12 @@ export interface InventoryTotals {
   estimatedValueBeforeSales: number;
 }
 
+export interface InventoryProductOption {
+  id: string;
+  name: string;
+  stock: number;
+}
+
 export interface StockMovement {
   id: string;
   type: StockMovementType;
@@ -141,17 +158,29 @@ export interface StockMovement {
   product: { id: string; name: string };
 }
 
-export function fetchInventory() {
-  return api<{ items: InventoryItem[]; totals: InventoryTotals }>("/inventory");
+export function fetchInventory(params: InventoryParams) {
+  const p = new URLSearchParams({
+    page: String(params.page),
+    limit: String(params.limit),
+  });
+  return api<{
+    items: InventoryItem[];
+    totals: InventoryTotals;
+    productOptions: InventoryProductOption[];
+    total: number;
+    page: number;
+    totalPages: number;
+  }>(`/inventory?${p}`);
 }
 
-export function fetchMovements(params: { page?: number; type?: StockMovementType } = {}) {
-  const p = new URLSearchParams();
-  if (params.page) p.set("page", String(params.page));
+export function fetchMovements(params: MovementParams) {
+  const p = new URLSearchParams({
+    page: String(params.page),
+    limit: String(params.limit),
+  });
   if (params.type) p.set("type", params.type);
-  const qs = p.toString();
   return api<{ movements: StockMovement[]; total: number; page: number; totalPages: number }>(
-    `/inventory/movements${qs ? `?${qs}` : ""}`
+    `/inventory/movements?${p}`
   );
 }
 
@@ -162,6 +191,18 @@ export function createMovement(body: {
   reason?: string;
 }) {
   return api<{ success: boolean; stock: number }>("/inventory/movements", {
+    method: "POST",
+    body,
+  });
+}
+
+export function createProduct(body: {
+  name: string;
+  price: number;
+  stock: number;
+  category: string | null;
+}) {
+  return api<{ product: Product }>("/products", {
     method: "POST",
     body,
   });

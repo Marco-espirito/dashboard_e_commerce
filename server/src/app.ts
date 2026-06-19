@@ -14,6 +14,7 @@ import twoFactorRoutes from "./routes/twoFactor.routes";
 import authEventsRoutes from "./routes/authEvents.routes";
 import searchRoutes from "./routes/search.routes";
 import inventoryRoutes from "./routes/inventory.routes";
+import shopRoutes from "./routes/shop.routes";
 import memberRoutes from "./routes/members.routes";
 import statsRoutes from "./routes/stats.routes";
 import orderRoutes from "./routes/orders.routes";
@@ -47,7 +48,17 @@ app.use(
 
 // ── Sécurité ──────────────────────────────────────────────────────────────────
 app.use(helmet());
-app.use(cors({ origin: env.CORS_ORIGIN, credentials: true }));
+const corsOrigins = env.CORS_ORIGIN.split(",").map((origin) => origin.trim());
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || corsOrigins.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error("Origine CORS non autorisee"));
+  },
+  credentials: true,
+}));
 app.use(cookieParser());
 app.use(express.json());
 
@@ -80,6 +91,7 @@ app.use("/api/audit", auditRoutes);
 app.use("/api/auth-events", authEventsRoutes);
 app.use("/api/search", searchRoutes);
 app.use("/api/inventory", inventoryRoutes);
+app.use("/api/shop", shopRoutes);
 
 // ── Gestionnaire d'erreurs centralisé (toujours en dernier) ───────────────────
 app.use(errorHandler);

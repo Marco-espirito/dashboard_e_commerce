@@ -88,7 +88,7 @@ export function GlobalSearch() {
                       key={p.id}
                       label={p.name}
                       meta={`${p.category ?? "Sans catégorie"} · stock ${p.stock}`}
-                      onClick={() => go("/admin/produits")}
+                      onClick={() => go("/admin/inventaire")}
                     />
                   ))}
                 </Group>
