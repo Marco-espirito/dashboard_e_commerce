@@ -8,10 +8,16 @@ import {
 import { api, setAccessToken } from "../lib/api";
 import type { User } from "../types";
 
+/** Résultat d'un login : succès direct, ou challenge 2FA à compléter. */
+export type LoginResult =
+  | { twoFactorRequired: false; user: User }
+  | { twoFactorRequired: true; challengeToken: string };
+
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<User>;
+  login: (email: string, password: string) => Promise<LoginResult>;
+  verifyTwoFactor: (challengeToken: string, code: string) => Promise<User>;
   logout: () => void;
 }
 
@@ -52,10 +58,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("auth:logout", handleForceLogout);
   }, []);
 
-  async function login(email: string, password: string): Promise<User> {
-    const data = await api<{ token: string; user: User }>("/auth/login", {
+  async function login(email: string, password: string): Promise<LoginResult> {
+    const data = await api<{
+      token?: string;
+      user?: User;
+      twoFactorRequired?: boolean;
+      challengeToken?: string;
+    }>("/auth/login", {
       method: "POST",
       body: { email, password },
+      auth: false,
+    });
+
+    // 2FA active : pas encore de session, on renvoie le challenge à compléter.
+    if (data.twoFactorRequired && data.challengeToken) {
+      return { twoFactorRequired: true, challengeToken: data.challengeToken };
+    }
+
+    setAccessToken(data.token!);
+    setUser(data.user!);
+    return { twoFactorRequired: false, user: data.user! };
+  }
+
+  async function verifyTwoFactor(challengeToken: string, code: string): Promise<User> {
+    const data = await api<{ token: string; user: User }>("/auth/login/2fa", {
+      method: "POST",
+      body: { challengeToken, code },
       auth: false,
     });
     setAccessToken(data.token);
@@ -71,7 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, verifyTwoFactor, logout }}>
       {children}
     </AuthContext.Provider>
   );

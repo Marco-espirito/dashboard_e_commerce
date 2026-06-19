@@ -50,3 +50,29 @@ export function signRefreshToken(payload: JwtPayload): { token: string; jti: str
 export function verifyRefreshToken(token: string): RefreshPayload {
   return jwt.verify(token, REFRESH_SECRET) as RefreshPayload;
 }
+
+// ─── Challenge 2FA ──────────────────────────────────────────────────────────────
+
+/** Payload d'un token de challenge 2FA (étape intermédiaire du login). */
+interface TwoFactorChallengePayload {
+  userId: string;
+  purpose: "2fa";
+}
+
+/**
+ * Signe un token court (5 min) émis après validation du mot de passe quand la 2FA
+ * est active. Il ne donne accès à RIEN d'autre qu'à l'étape de vérification du code.
+ */
+export function signTwoFactorChallenge(userId: string): string {
+  return jwt.sign({ userId, purpose: "2fa" } satisfies TwoFactorChallengePayload, JWT_SECRET, {
+    expiresIn: "5m",
+  });
+}
+
+export function verifyTwoFactorChallenge(token: string): { userId: string } {
+  const payload = jwt.verify(token, JWT_SECRET) as TwoFactorChallengePayload;
+  if (payload.purpose !== "2fa") {
+    throw new Error("Token de challenge invalide");
+  }
+  return { userId: payload.userId };
+}

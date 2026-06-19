@@ -8,6 +8,7 @@ export const queryKeys = {
   notifications: () => ["notifications"] as const,
   members: () => ["members"] as const,
   sessions: () => ["sessions"] as const,
+  twoFactorStatus: () => ["2fa", "status"] as const,
   orders: (params: OrdersParams) => ["orders", params] as const,
   products: (params: ProductsParams) => ["products", params] as const,
 };
@@ -60,6 +61,24 @@ export function revokeOtherSessions() {
   return api<{ success: boolean; revokedCount: number }>("/auth/sessions", {
     method: "DELETE",
   });
+}
+
+// ─── 2FA (TOTP) ────────────────────────────────────────────────────────────────
+
+export function fetchTwoFactorStatus() {
+  return api<{ enabled: boolean }>("/auth/2fa/status");
+}
+
+export function setupTwoFactor() {
+  return api<{ qrCode: string; otpauthUrl: string }>("/auth/2fa/setup", { method: "POST" });
+}
+
+export function enableTwoFactor(code: string) {
+  return api<{ success: boolean }>("/auth/2fa/enable", { method: "POST", body: { code } });
+}
+
+export function disableTwoFactor(code: string) {
+  return api<{ success: boolean }>("/auth/2fa/disable", { method: "POST", body: { code } });
 }
 
 export function fetchOrders(params: OrdersParams) {

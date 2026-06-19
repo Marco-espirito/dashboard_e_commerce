@@ -10,6 +10,7 @@ import { errorHandler } from "./middleware/errorHandler";
 
 import authRoutes from "./routes/auth.routes";
 import sessionsRoutes from "./routes/sessions.routes";
+import twoFactorRoutes from "./routes/twoFactor.routes";
 import authEventsRoutes from "./routes/authEvents.routes";
 import memberRoutes from "./routes/members.routes";
 import statsRoutes from "./routes/stats.routes";
@@ -66,6 +67,7 @@ app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
 app.use("/api/auth/login", authLimiter);
 app.use("/api/auth", authRoutes);
 app.use("/api/auth/sessions", sessionsRoutes);
+app.use("/api/auth/2fa", twoFactorRoutes);
 app.use("/api/members", memberRoutes);
 app.use("/api/stats", statsRoutes);
 app.use("/api/orders", orderRoutes);

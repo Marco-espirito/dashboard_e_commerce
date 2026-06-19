@@ -1,4 +1,4 @@
-import { Router, type Response } from "express";
+import { Router, type Request, type Response } from "express";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
@@ -6,8 +6,11 @@ import {
   signToken,
   signRefreshToken,
   verifyRefreshToken,
+  signTwoFactorChallenge,
+  verifyTwoFactorChallenge,
   REFRESH_TOKEN_TTL_MS,
 } from "../utils/jwt";
+import { verifyTotp } from "../lib/totp";
 import { authenticate } from "../middleware/auth";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { AppError } from "../middleware/errorHandler";
@@ -107,43 +110,104 @@ router.post("/login", asyncHandler(async (req, res) => {
     );
   }
 
-  // ── Connexion réussie — réinitialiser le compteur ─────────────────────────
+  // ── Mot de passe correct — réinitialiser le compteur d'échecs ─────────────
+  // (qu'il y ait 2FA ou non, l'étape mot de passe est validée)
+  if (user.loginAttempts !== 0 || user.lockedUntil !== null) {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { loginAttempts: 0, lockedUntil: null },
+    });
+  }
+
+  // ── Étape 2FA : si activée, on n'émet PAS encore les tokens ───────────────
+  if (user.totpEnabled) {
+    return res.json({
+      twoFactorRequired: true,
+      challengeToken: signTwoFactorChallenge(user.id),
+    });
+  }
+
+  // ── Connexion réussie (sans 2FA) ──────────────────────────────────────────
+  return completeLogin(req, res, user);
+}));
+
+/**
+ * Émet les tokens de session pour un utilisateur authentifié (mot de passe +
+ * éventuellement 2FA déjà validés). Partagé entre le login simple et la
+ * vérification du code 2FA.
+ */
+async function completeLogin(
+  req: Request,
+  res: Response,
+  user: { id: string; email: string; name: string; role: "ADMIN" | "MEMBER" }
+) {
   const { token: refreshToken, jti } = signRefreshToken({ userId: user.id, role: user.role });
   // sessionId = jti du refresh token → permet d'identifier la session courante
   const accessToken = signToken({ userId: user.id, role: user.role, sessionId: jti });
 
-  await prisma.$transaction([
-    // Réinitialiser le compteur d'échecs
-    prisma.user.update({
-      where: { id: user.id },
-      data: { loginAttempts: 0, lockedUntil: null },
-    }),
-    // Enregistrer le nouveau refresh token avec les métadonnées de session
-    prisma.refreshToken.create({
-      data: {
-        jti,
-        userId: user.id,
-        expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
-        userAgent: req.headers["user-agent"] ?? null,
-        ipAddress: (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0].trim()
-          ?? req.socket.remoteAddress
-          ?? null,
-      },
-    }),
-  ]);
+  await prisma.refreshToken.create({
+    data: {
+      jti,
+      userId: user.id,
+      expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
+      userAgent: req.headers["user-agent"] ?? null,
+      ipAddress: (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0].trim()
+        ?? req.socket.remoteAddress
+        ?? null,
+    },
+  });
 
   // Nettoyer les tokens expirés (best-effort, sans bloquer la réponse)
   prisma.refreshToken
     .deleteMany({ where: { userId: user.id, expiresAt: { lt: new Date() } } })
     .catch((err) => logger.warn({ err }, "Échec nettoyage refresh tokens expirés"));
 
-  await logAuthEvent({ type: "LOGIN_SUCCESS", email, userId: user.id, ...clientInfo });
+  await logAuthEvent({
+    type: "LOGIN_SUCCESS",
+    email: user.email,
+    userId: user.id,
+    ...extractClientInfo(req),
+  });
 
   setRefreshCookie(res, refreshToken);
   return res.json({
     token: accessToken,
     user: { id: user.id, email: user.email, name: user.name, role: user.role },
   });
+}
+
+// ── POST /api/auth/login/2fa ──────────────────────────────────────────────────
+// Seconde étape du login : finalise la connexion après vérification du code TOTP.
+const twoFactorLoginSchema = z.object({
+  challengeToken: z.string().min(1, "Challenge manquant"),
+  code: z.string().min(6, "Code à 6 chiffres requis"),
+});
+
+router.post("/login/2fa", asyncHandler(async (req, res) => {
+  const parsed = twoFactorLoginSchema.safeParse(req.body);
+  if (!parsed.success) throw new AppError(400, parsed.error.issues[0].message);
+
+  const { challengeToken, code } = parsed.data;
+  const clientInfo = extractClientInfo(req);
+
+  let userId: string;
+  try {
+    ({ userId } = verifyTwoFactorChallenge(challengeToken));
+  } catch {
+    throw new AppError(401, "Session de connexion expirée, veuillez recommencer.");
+  }
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user || user.deletedAt || !user.totpEnabled || !user.totpSecret) {
+    throw new AppError(401, "Vérification impossible.");
+  }
+
+  if (!verifyTotp(code, user.totpSecret)) {
+    await logAuthEvent({ type: "LOGIN_FAILED", email: user.email, userId: user.id, ...clientInfo });
+    throw new AppError(401, "Code de vérification invalide.");
+  }
+
+  return completeLogin(req, res, user);
 }));
 
 // ── POST /api/auth/refresh ────────────────────────────────────────────────────

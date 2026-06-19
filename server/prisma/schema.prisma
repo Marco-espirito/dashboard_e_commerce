@@ -29,6 +29,11 @@ model User {
   // (audit logs, historique de statut) tout en désactivant le compte.
   deletedAt DateTime?
 
+  // Double authentification (TOTP). totpSecret est posé lors du setup mais
+  // 2FA n'est réellement active qu'après vérification d'un premier code.
+  totpSecret  String?
+  totpEnabled Boolean @default(false)
+
   // Trace de l'admin qui a créé ce membre
   createdById String?
   createdBy   User?    @relation("CreatedMembers", fields: [createdById], references: [id])
