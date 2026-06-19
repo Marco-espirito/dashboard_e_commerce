@@ -112,7 +112,7 @@ export function DashboardPage() {
         <p className="mt-1 text-sm text-slate-500">Vue d'ensemble de ta boutique.</p>
       </div>
 
-      {/* KPIs */}
+      {/* KPIs globaux */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {kpis.map((k) => (
           <div key={k.label} className="rounded-2xl border border-slate-200 bg-white p-5">
@@ -120,6 +120,51 @@ export function DashboardPage() {
             <div className="mt-2 text-2xl font-semibold text-slate-900">{k.value}</div>
           </div>
         ))}
+      </div>
+
+      {/* KPIs du jour & performance */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="rounded-2xl border border-slate-200 bg-white p-5">
+          <div className="text-xs font-medium uppercase tracking-wide text-slate-400">Commandes du jour</div>
+          <div className="mt-2 text-2xl font-semibold text-slate-900">{stats.ordersToday}</div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-5">
+          <div className="text-xs font-medium uppercase tracking-wide text-slate-400">CA du jour</div>
+          <div className="mt-2 text-2xl font-semibold text-slate-900">{formatPrice(stats.revenueToday)}</div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-5">
+          <div className="text-xs font-medium uppercase tracking-wide text-slate-400">Meilleur client</div>
+          {stats.bestClient ? (
+            <>
+              <div className="mt-2 truncate text-lg font-semibold text-slate-900" title={stats.bestClient.name}>
+                {stats.bestClient.name}
+              </div>
+              <div className="mt-0.5 text-xs text-slate-400">
+                {formatPrice(stats.bestClient.revenue)} · {stats.bestClient.ordersCount} cmd
+              </div>
+            </>
+          ) : (
+            <div className="mt-2 text-2xl font-semibold text-slate-300">—</div>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-5">
+          <div className="text-xs font-medium uppercase tracking-wide text-slate-400">Taux d'annulation</div>
+          <div
+            className={
+              "mt-2 text-2xl font-semibold " +
+              (stats.cancellationRate >= 20
+                ? "text-red-600"
+                : stats.cancellationRate >= 10
+                  ? "text-amber-600"
+                  : "text-slate-900")
+            }
+          >
+            {stats.cancellationRate.toLocaleString("fr-FR")} %
+          </div>
+        </div>
       </div>
 
       {/* Graphique */}
@@ -203,6 +248,28 @@ export function DashboardPage() {
             </BarChart>
           </ResponsiveContainer>
         </div>
+      </div>
+
+      {/* Produits les plus vendus ce mois-ci */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-6">
+        <h2 className="text-sm font-semibold text-slate-900">Produits les plus vendus ce mois-ci</h2>
+        {stats.topProductsThisMonth.length === 0 ? (
+          <p className="mt-4 text-sm text-slate-400">Aucune vente enregistrée ce mois-ci.</p>
+        ) : (
+          <ul className="mt-4 space-y-3">
+            {stats.topProductsThisMonth.map((p, i) => (
+              <li key={p.name} className="flex items-center justify-between text-sm">
+                <span className="flex items-center gap-3">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-md bg-indigo-50 text-xs font-semibold text-indigo-600">
+                    {i + 1}
+                  </span>
+                  <span className="text-slate-700">{p.name}</span>
+                </span>
+                <span className="font-medium text-slate-900">{p.sold} vendus</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       {/* Top produits + Stock faible */}

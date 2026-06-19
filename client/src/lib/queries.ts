@@ -126,6 +126,11 @@ export interface Stats {
   topProducts: { name: string; sold: number; revenue: number }[];
   lowStock: { id: string; name: string; stock: number }[];
   recentOrders: { id: string; customer: string; total: number; status: OrderStatus; createdAt: string }[];
+  ordersToday: number;
+  revenueToday: number;
+  cancellationRate: number;
+  bestClient: { name: string; revenue: number; ordersCount: number } | null;
+  topProductsThisMonth: { name: string; sold: number }[];
 }
 
 export interface PurchaseSummary {

@@ -96,6 +96,61 @@ router.get("/overview", asyncHandler(async (_req, res) => {
     select: { id: true, customer: true, total: true, status: true, createdAt: true },
   });
 
+  // ── KPIs « du jour » / « ce mois-ci » / clients ──────────────────────────────
+  const now = new Date();
+  const startOfDay = new Date(now);
+  startOfDay.setHours(0, 0, 0, 0);
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  // Commandes du jour (toutes) + chiffre d'affaires du jour (statuts encaissés)
+  const ordersToday = await prisma.order.count({
+    where: { createdAt: { gte: startOfDay } },
+  });
+  const revenueTodayAgg = await prisma.order.aggregate({
+    where: { status: { in: [...REVENUE_STATUSES] }, createdAt: { gte: startOfDay } },
+    _sum: { total: true },
+  });
+  const revenueToday = revenueTodayAgg._sum.total ?? 0;
+
+  // Taux d'annulation (commandes annulées / total)
+  const cancelledCount = await prisma.order.count({ where: { status: "CANCELLED" } });
+  const cancellationRate =
+    ordersCount > 0 ? Math.round((cancelledCount / ordersCount) * 1000) / 10 : 0;
+
+  // Meilleur client (par CA encaissé)
+  const bestClientRaw = await prisma.order.groupBy({
+    by: ["customer"],
+    where: { status: { in: [...REVENUE_STATUSES] } },
+    _sum: { total: true },
+    _count: { customer: true },
+    orderBy: { _sum: { total: "desc" } },
+    take: 1,
+  });
+  const bestClient = bestClientRaw[0]
+    ? {
+        name: bestClientRaw[0].customer,
+        revenue: bestClientRaw[0]._sum.total ?? 0,
+        ordersCount: bestClientRaw[0]._count.customer,
+      }
+    : null;
+
+  // Produits les plus vendus ce mois-ci (hors commandes annulées)
+  const monthItems = await prisma.orderItem.findMany({
+    where: { order: { createdAt: { gte: startOfMonth }, status: { not: "CANCELLED" } } },
+    select: { quantity: true, product: { select: { name: true } } },
+  });
+  const monthProductMap = new Map<string, number>();
+  for (const it of monthItems) {
+    monthProductMap.set(
+      it.product.name,
+      (monthProductMap.get(it.product.name) ?? 0) + it.quantity
+    );
+  }
+  const topProductsThisMonth = Array.from(monthProductMap.entries())
+    .map(([name, sold]) => ({ name, sold }))
+    .sort((a, b) => b.sold - a.sold)
+    .slice(0, 5);
+
   return res.json({
     revenueTotal,
     ordersCount,
@@ -105,6 +160,12 @@ router.get("/overview", asyncHandler(async (_req, res) => {
     topProducts,
     lowStock,
     recentOrders,
+    // Nouveaux KPIs
+    ordersToday,
+    revenueToday,
+    cancellationRate,
+    bestClient,
+    topProductsThisMonth,
   });
 }));
 
