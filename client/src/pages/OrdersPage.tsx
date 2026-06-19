@@ -59,6 +59,7 @@ export function OrdersPage() {
   const filter: "ALL" | OrderStatus = isOrderStatus(statusParam) ? statusParam : "ALL";
   const sort = (searchParams.get("sort") as SortOption) ?? "DATE_DESC";
   const currentPage = Math.max(1, Number(searchParams.get("page") ?? "1"));
+  const customer = searchParams.get("customer") ?? undefined;
 
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [orderDetail, setOrderDetail] = useState<OrderDetail | null>(null);
@@ -80,6 +81,7 @@ export function OrdersPage() {
     limit: PER_PAGE,
     sort,
     ...(filter !== "ALL" ? { status: filter } : {}),
+    ...(customer ? { customer } : {}),
   };
 
   const { data, isLoading: loading, error } = useQuery({
@@ -140,7 +142,7 @@ export function OrdersPage() {
     if (selectedOrderId !== firstPageOrderId) {
       loadOrderDetail(firstPageOrderId);
     }
-  }, [loading, !!error, firstPageOrderId, currentPage, filter, sort]);
+  }, [loading, !!error, firstPageOrderId, currentPage, filter, sort, customer]);
 
   if (loading) return <p className="text-sm text-slate-400">Chargement...</p>;
   if (error) return <p className="text-sm text-red-600">{error instanceof Error ? error.message : "Erreur"}</p>;
@@ -154,6 +156,19 @@ export function OrdersPage() {
             {total} commande{total > 1 ? "s" : ""}
             {filter !== "ALL" ? " dans cette catégorie" : " au total"}.
           </p>
+          {customer && (
+            <span className="mt-2 inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1 text-sm font-medium text-indigo-700">
+              Client : {customer}
+              <button
+                type="button"
+                onClick={() => setParams({ customer: null, page: null })}
+                className="text-indigo-400 transition hover:text-indigo-700"
+                aria-label="Retirer le filtre client"
+              >
+                ✕
+              </button>
+            </span>
+          )}
         </div>
 
         <div className="flex flex-wrap gap-2">

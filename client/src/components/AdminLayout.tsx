@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../context/AuthContext";
 import { queryKeys, fetchNotifications } from "../lib/queries";
+import { GlobalSearch } from "./GlobalSearch";
 
 export function AdminLayout() {
   const { user, logout } = useAuth();
@@ -37,6 +38,10 @@ export function AdminLayout() {
             E
           </span>
           <span className="text-sm font-semibold text-slate-900">E-Shop Admin</span>
+        </div>
+
+        <div className="mb-4">
+          <GlobalSearch />
         </div>
 
         <nav className="flex flex-1 flex-col gap-1">

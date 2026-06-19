@@ -23,6 +23,7 @@ export interface OrdersParams {
   limit: number;
   status?: OrderStatus;
   sort: SortOption;
+  customer?: string;
 }
 
 export interface ProductsParams {
@@ -81,6 +82,19 @@ export function disableTwoFactor(code: string) {
   return api<{ success: boolean }>("/auth/2fa/disable", { method: "POST", body: { code } });
 }
 
+// ─── Recherche globale ──────────────────────────────────────────────────────────
+
+export interface SearchResults {
+  products: { id: string; name: string; category: string | null; stock: number }[];
+  orders: { id: string; customer: string; total: number; status: OrderStatus }[];
+  members: { id: string; name: string; email: string; role: "ADMIN" | "MEMBER" }[];
+  clients: { name: string; ordersCount: number }[];
+}
+
+export function search(q: string) {
+  return api<SearchResults>(`/search?q=${encodeURIComponent(q)}`);
+}
+
 export function fetchOrders(params: OrdersParams) {
   const p = new URLSearchParams({
     page: String(params.page),
@@ -88,6 +102,7 @@ export function fetchOrders(params: OrdersParams) {
     sort: params.sort,
   });
   if (params.status) p.set("status", params.status);
+  if (params.customer) p.set("customer", params.customer);
   return api<OrdersResponse>(`/orders?${p}`);
 }
 

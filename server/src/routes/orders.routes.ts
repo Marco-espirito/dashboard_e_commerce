@@ -14,6 +14,7 @@ const listSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(10),
   status: z.enum(["PENDING", "PAID", "SHIPPED", "DELIVERED", "CANCELLED"]).optional(),
   sort: z.enum(["DATE_DESC", "DATE_ASC", "TOTAL_DESC", "TOTAL_ASC"]).default("DATE_DESC"),
+  customer: z.string().trim().min(1).optional(),
 });
 
 const statusSchema = z.object({
@@ -26,9 +27,12 @@ router.get("/", asyncHandler(async (req, res) => {
   if (!parsed.success) {
     throw new AppError(400, parsed.error.issues[0].message);
   }
-  const { page, limit, status, sort } = parsed.data;
+  const { page, limit, status, sort, customer } = parsed.data;
 
-  const where = status ? { status } : {};
+  const where = {
+    ...(status ? { status } : {}),
+    ...(customer ? { customer: { contains: customer, mode: "insensitive" as const } } : {}),
+  };
   const orderBy =
     sort === "DATE_ASC" ? { createdAt: "asc" as const } :
     sort === "TOTAL_DESC" ? { total: "desc" as const } :
