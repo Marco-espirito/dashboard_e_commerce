@@ -48,10 +48,16 @@ app.use(
 
 // ── Sécurité ──────────────────────────────────────────────────────────────────
 app.use(helmet());
-const corsOrigins = env.CORS_ORIGIN.split(",").map((origin) => origin.trim());
+const corsOrigins = new Set([
+  ...env.CORS_ORIGIN.split(",").map((origin) => origin.trim()).filter(Boolean),
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "http://127.0.0.1:5173",
+  "http://127.0.0.1:5174",
+]);
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || corsOrigins.includes(origin)) {
+    if (!origin || corsOrigins.has(origin)) {
       callback(null, true);
       return;
     }
