@@ -13,6 +13,7 @@ import sessionsRoutes from "./routes/sessions.routes";
 import twoFactorRoutes from "./routes/twoFactor.routes";
 import authEventsRoutes from "./routes/authEvents.routes";
 import searchRoutes from "./routes/search.routes";
+import inventoryRoutes from "./routes/inventory.routes";
 import memberRoutes from "./routes/members.routes";
 import statsRoutes from "./routes/stats.routes";
 import orderRoutes from "./routes/orders.routes";
@@ -78,6 +79,7 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/audit", auditRoutes);
 app.use("/api/auth-events", authEventsRoutes);
 app.use("/api/search", searchRoutes);
+app.use("/api/inventory", inventoryRoutes);
 
 // ── Gestionnaire d'erreurs centralisé (toujours en dernier) ───────────────────
 app.use(errorHandler);

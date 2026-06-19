@@ -77,6 +77,31 @@ model Product {
   category   String?
   createdAt  DateTime    @default(now())
   orderItems OrderItem[]
+  stockMovements StockMovement[]
+}
+
+enum StockMovementType {
+  STOCK_ADDED        // Ajout de stock
+  STOCK_REMOVED      // Retrait de stock
+  SALE               // Vente via commande
+  RETURN             // Retour produit
+  MANUAL_CORRECTION  // Correction manuelle
+}
+
+// Historique des mouvements de stock d'un produit.
+model StockMovement {
+  id         String            @id @default(cuid())
+  productId  String
+  product    Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  type       StockMovementType
+  quantity   Int // signé : positif = entrée, négatif = sortie
+  stockAfter Int? // stock résultant (null pour les mouvements historiques rétro-générés)
+  reason     String?
+  userId     String? // auteur (null = automatique / système)
+  createdAt  DateTime          @default(now())
+
+  @@index([productId])
+  @@index([createdAt])
 }
 
 model Order {

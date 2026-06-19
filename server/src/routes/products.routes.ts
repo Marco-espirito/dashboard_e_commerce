@@ -5,6 +5,7 @@ import { authenticate, requireAdmin } from "../middleware/auth";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { AppError } from "../middleware/errorHandler";
 import { logAudit, diffObjects } from "../lib/audit";
+import { logStockMovement } from "../lib/stock";
 
 const router = Router();
 
@@ -104,6 +105,18 @@ router.post("/", asyncHandler(async (req, res) => {
     metadata: { name: product.name, price: product.price, stock: product.stock, category: product.category },
   });
 
+  // Mouvement de stock initial
+  if (product.stock > 0) {
+    await logStockMovement({
+      productId: product.id,
+      type: "STOCK_ADDED",
+      quantity: product.stock,
+      stockAfter: product.stock,
+      reason: "Stock initial à la création",
+      userId: req.user!.userId,
+    });
+  }
+
   return res.status(201).json({ product: withStockStats(product) });
 }));
 
@@ -132,6 +145,18 @@ router.patch("/:id", asyncHandler(async (req, res) => {
     userId: req.user!.userId,
     metadata: diffObjects(before, after),
   });
+
+  // Si le stock a changé via la fiche produit → mouvement de correction
+  if (product.stock !== existing.stock) {
+    await logStockMovement({
+      productId: product.id,
+      type: "MANUAL_CORRECTION",
+      quantity: product.stock - existing.stock,
+      stockAfter: product.stock,
+      reason: "Modification via la fiche produit",
+      userId: req.user!.userId,
+    });
+  }
 
   return res.json({ product: withStockStats(product) });
 }));

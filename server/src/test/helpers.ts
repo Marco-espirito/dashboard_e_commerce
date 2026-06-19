@@ -57,6 +57,7 @@ export async function cleanDb(): Promise<void> {
   await prisma.orderStatusHistory.deleteMany();
   await prisma.orderItem.deleteMany();
   await prisma.order.deleteMany();
+  await prisma.stockMovement.deleteMany();
   await prisma.product.deleteMany();
   // Supprimer les users créés pendant les tests (pas l'admin de test)
   await prisma.user.deleteMany({

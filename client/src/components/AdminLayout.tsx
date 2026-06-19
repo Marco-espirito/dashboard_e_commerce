@@ -54,6 +54,9 @@ export function AdminLayout() {
           <NavLink to="/admin/produits" className={linkClass}>
             Produits
           </NavLink>
+          <NavLink to="/admin/inventaire" className={linkClass}>
+            Inventaire
+          </NavLink>
           <NavLink to="/admin/equipe" className={linkClass}>
             Équipe
           </NavLink>
@@ -130,6 +133,7 @@ export function AdminLayout() {
             <NavLink to="/admin" end className={linkClass}>Dashboard</NavLink>
             <NavLink to="/admin/commandes" className={linkClass}>Commandes</NavLink>
             <NavLink to="/admin/produits" className={linkClass}>Produits</NavLink>
+            <NavLink to="/admin/inventaire" className={linkClass}>Inventaire</NavLink>
             <NavLink to="/admin/equipe" className={linkClass}>Équipe</NavLink>
             <NavLink to="/admin/sessions" className={linkClass}>Sessions</NavLink>
             <NavLink to="/admin/securite" className={linkClass}>Sécurité</NavLink>

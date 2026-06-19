@@ -10,6 +10,8 @@ export const queryKeys = {
   members: () => ["members"] as const,
   sessions: () => ["sessions"] as const,
   twoFactorStatus: () => ["2fa", "status"] as const,
+  inventory: () => ["inventory"] as const,
+  movements: (filter: string) => ["inventory", "movements", filter] as const,
   orders: (params: OrdersParams) => ["orders", params] as const,
   products: (params: ProductsParams) => ["products", params] as const,
 };
@@ -101,6 +103,68 @@ export interface SearchResults {
 
 export function search(q: string) {
   return api<SearchResults>(`/search?q=${encodeURIComponent(q)}`);
+}
+
+// ─── Inventaire ─────────────────────────────────────────────────────────────────
+
+export type StockStatus = "OK" | "LOW" | "CRITICAL";
+export type StockMovementType =
+  | "STOCK_ADDED" | "STOCK_REMOVED" | "SALE" | "RETURN" | "MANUAL_CORRECTION";
+
+export interface InventoryItem {
+  id: string;
+  name: string;
+  category: string | null;
+  stock: number;
+  stockBefore: number;
+  sold: number;
+  unitPrice: number;
+  stockValue: number;
+  status: StockStatus;
+}
+
+export interface InventoryTotals {
+  totalProducts: number;
+  totalStock: number;
+  totalSold: number;
+  totalStockValue: number;
+  estimatedValueBeforeSales: number;
+}
+
+export interface StockMovement {
+  id: string;
+  type: StockMovementType;
+  quantity: number;
+  stockAfter: number | null;
+  reason: string | null;
+  createdAt: string;
+  product: { id: string; name: string };
+}
+
+export function fetchInventory() {
+  return api<{ items: InventoryItem[]; totals: InventoryTotals }>("/inventory");
+}
+
+export function fetchMovements(params: { page?: number; type?: StockMovementType } = {}) {
+  const p = new URLSearchParams();
+  if (params.page) p.set("page", String(params.page));
+  if (params.type) p.set("type", params.type);
+  const qs = p.toString();
+  return api<{ movements: StockMovement[]; total: number; page: number; totalPages: number }>(
+    `/inventory/movements${qs ? `?${qs}` : ""}`
+  );
+}
+
+export function createMovement(body: {
+  productId: string;
+  type: Exclude<StockMovementType, "SALE">;
+  quantity: number;
+  reason?: string;
+}) {
+  return api<{ success: boolean; stock: number }>("/inventory/movements", {
+    method: "POST",
+    body,
+  });
 }
 
 export function fetchOrders(params: OrdersParams) {
